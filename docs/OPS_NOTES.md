@@ -114,10 +114,14 @@ docker compose --env-file infra/docker/.env \
 ```
 
 1. **MySQL 연결 실패 (spring-api 미기동)** — `.env`의 `SPRING_DATASOURCE_URL`, `MYSQL_PASSWORD` 확인
-2. **502 Bad Gateway (Nginx)** — `spring-api` 컨테이너 상태 및 로그 확인
-3. **임베딩 실패** — `python-embed` 컨테이너 로그 확인, `EMBED_MODEL=mock-v1` 여부 확인
-4. **Qdrant 연결 실패** — `qdrant` 컨테이너 상태, `http://localhost:6333/healthz` 응답 확인
-5. **spring-api 기동 지연** — `start_period: 60s`이므로 최대 75초까지 대기
+2. **Flyway 마이그레이션 실패** — `spring-api` 로그에서 `FlywayException` 확인
+   - `Validate failed` → 이미 적용된 마이그레이션 파일이 변경됨. 파일 내용 복구 필요
+   - `Migration checksum mismatch` → 동일 원인. 체크섬 불일치
+   - 기존 DB에 테이블이 있고 `flyway_schema_history` 가 없는 경우 → `IF NOT EXISTS` 덕분에 자동 처리됨
+3. **502 Bad Gateway (Nginx)** — `spring-api` 컨테이너 상태 및 로그 확인
+4. **임베딩 실패** — `python-embed` 컨테이너 로그 확인, `EMBED_MODEL=mock-v1` 여부 확인
+5. **Qdrant 연결 실패** — `qdrant` 컨테이너 상태, `http://localhost:6333/healthz` 응답 확인
+6. **spring-api 기동 지연** — `start_period: 60s`이므로 최대 75초까지 대기
 
 ---
 

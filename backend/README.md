@@ -26,7 +26,8 @@ MySQL, Qdrant, Python Embed 서비스와 통신합니다.
 | 항목 | 상태 |
 |---|---|
 | 기동 및 actuator health | 구현됨 |
-| MySQL 연결 | 구현됨 (JPA ddl-auto: update) |
+| MySQL 연결 | 구현됨 (Flyway 마이그레이션, JPA ddl-auto: none) |
+| DB 마이그레이션 | Flyway 활성화 — `db/migration/V1__baseline.sql` (초기 7개 테이블) |
 | Python embed 클라이언트 | 구현됨 (`EmbedClient`) |
 | Qdrant 컬렉션 초기화 | 구현됨 (`QdrantInitializer`) |
 | Dev 테스트 엔드포인트 | 구현됨 (`/api/dev/*`, **dev profile 전용**) |
@@ -69,7 +70,7 @@ cd backend
 # Java 21 필수 (CI: actions/setup-java@v4 java-version=21)
 gradle test --no-daemon --stacktrace
 # H2 인메모리 DB 사용 — MySQL 없이 실행 가능
-# test profile: DevController 로드 안 함 (@Profile("dev") 전용)
+# test profile: Flyway 비활성화, DevController 로드 안 함 (@Profile("dev") 전용)
 ```
 
 ---

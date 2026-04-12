@@ -20,7 +20,8 @@
 ### Backend
 
 - [x] Spring Boot 3.2.5 + Java 21 기동 및 `actuator/health` 응답
-- [x] MySQL 연결 (JPA, `ddl-auto: update`)
+- [x] MySQL 연결 (Flyway 마이그레이션, `ddl-auto: none`)
+- [x] DB 스키마 baseline (`V1__baseline.sql` — 7개 테이블, `db/migration/`)
 - [x] Python embed 클라이언트 (`EmbedClient`)
 - [x] Qdrant 컬렉션 초기화 (`QdrantInitializer` — 연결 실패 시 경고만 출력)
 - [x] `DevController` → `@Profile("dev")` 격리 완료
@@ -93,7 +94,7 @@
 
 ## 실제 졸업작품 레포로 옮길 때 다시 확인할 것
 
-1. **도메인 모델 설계** — `docs/TABLE_DRAFT.md`, `docs/VECTOR_SCHEMA_DRAFT.md` 기반으로 JPA Entity 구현
+1. **JPA Entity 구현** — `docs/TABLE_DRAFT.md` 기반으로 엔티티 작성. 완료 후 `ddl-auto: none` → `validate` 전환 권장 ([docs/DB_MIGRATION_STRATEGY.md](DB_MIGRATION_STRATEGY.md) 참고)
 2. **실제 비문 임베딩 모델** — `python-embed/app/main.py`의 `_load_model()` 구현 (PyTorch/ONNX 등)
 3. **Spring Security 적용** — JWT 또는 OAuth2 기반 인증
 4. **secrets 관리** — `.env` → Docker Secrets 또는 클라우드 비밀 관리 서비스

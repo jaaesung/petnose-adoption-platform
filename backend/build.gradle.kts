@@ -33,6 +33,11 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("com.mysql:mysql-connector-j")
 
+    // Flyway — Spring Boot 3.2.x 는 Flyway 10.x 를 관리함
+    // MySQL 지원은 flyway-mysql 별도 모듈 필요 (Flyway 10 부터 분리됨)
+    implementation("org.flywaydb:flyway-core")
+    implementation("org.flywaydb:flyway-mysql")
+
     // Lombok
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
