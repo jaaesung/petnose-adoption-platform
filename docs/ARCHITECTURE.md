@@ -69,7 +69,10 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 
 - 클라이언트 요청을 `spring-api`로 프록시합니다.
 - `client_max_body_size` 설정으로 이미지 업로드 크기를 제한합니다.
+- **정적 파일 직접 서빙**: `GET /files/{path}` → `uploads_data` 볼륨에서 직접 읽어 반환합니다.  
+  Spring Boot를 경유하지 않으므로 파일 조회 성능이 향상됩니다.
 - 향후 HTTPS 설정 시 이 레이어에서 SSL을 종료합니다.
+- 파일 저장 경로·URL 규칙 전체: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
 ---
 
@@ -79,13 +82,15 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 
 ```
 Flutter → POST /api/dogs/register (이미지 포함)
-  → Spring Boot: 이미지 저장 (uploads 볼륨)
+  → Spring Boot: 이미지 저장 (uploads 볼륨, 상대경로 DB 기록)
   → Spring Boot → Python Embed: POST /embed (이미지 바이트)
   ← Python Embed: { "vector": [...] }
   → Spring Boot → Qdrant: PUT /collections/dog_nose_embeddings/points
-  → Spring Boot → MySQL: INSERT INTO dogs ...
-  ← Spring Boot → Flutter: { "dog_id": "...", "status": "registered" }
+  → Spring Boot → MySQL: INSERT INTO dogs, dog_images (file_path = 상대경로)
+  ← Spring Boot → Flutter: { "dog_id": "...", "image_url": "/files/dogs/.../nose/..." }
 ```
+
+저장 경로 규칙 및 URL 형식: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
 ### 비문 인증 (동일 개체 확인)
 

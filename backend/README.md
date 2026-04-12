@@ -85,6 +85,8 @@ gradle test --no-daemon --stacktrace
 | `QDRANT_PORT` | Qdrant 포트 | `6333` |
 | `QDRANT_COLLECTION` | 사용할 컬렉션명 | `dog_nose_embeddings` |
 | `QDRANT_VECTOR_DIM` | 벡터 차원 (Python과 일치 필요) | `128` |
+| `UPLOAD_BASE_PATH` | 이미지 저장 루트 경로 (`uploads_data` 볼륨 마운트 경로) | `/var/uploads` |
+| `MAX_UPLOAD_SIZE_MB` | 단일 파일 최대 크기 (Nginx, Spring 동일 적용) | `20` |
 
 ---
 
@@ -100,6 +102,22 @@ gradle test --no-daemon --stacktrace
 | `POST /api/dev/embed-sample` | 이미지 업로드 후 임베딩 결과 반환 |
 | `GET /api/dev/qdrant-config` | Qdrant 설정 값 확인 |
 | `GET /actuator/health` | Spring 공식 health |
+
+---
+
+## 파일 저장 경로
+
+업로드된 이미지는 `${UPLOAD_BASE_PATH}` 아래에 다음 구조로 저장됩니다:
+
+```
+/var/uploads/
+└── dogs/{dog_uuid}/{image_type}/{yyyyMMdd_HHmmss}_{name}.jpg
+```
+
+`dog_images.file_path` 컬럼에는 **볼륨 루트를 제외한 상대 경로**만 기록합니다.  
+외부 URL: `GET /files/{relative_path}` (Nginx 직접 서빙)
+
+자세한 정책: [docs/FILE_STORAGE_AND_URL_POLICY.md](../docs/FILE_STORAGE_AND_URL_POLICY.md)
 
 ---
 

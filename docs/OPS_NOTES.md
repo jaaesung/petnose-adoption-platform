@@ -100,6 +100,9 @@ docker compose ... logs -f mysql
 | Dev Ping | `http://localhost:8080/api/dev/ping` | 연결 확인용 |
 | Python Embed | `http://localhost:8000/health` | dev 포트 오픈 시 |
 | Qdrant | `http://localhost:6333/healthz` | dev 포트 오픈 시 |
+| 업로드 이미지 | `http://localhost/files/dogs/{uuid}/nose/{filename}` | nginx 직접 서빙 |
+
+> **파일 URL 정책 전체**: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
 ---
 
