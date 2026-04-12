@@ -2,6 +2,7 @@ name: Publish Images to GHCR
 
 # develop 또는 main push 시 이미지를 빌드하고 GHCR에 publish합니다.
 # PR에서는 동작하지 않습니다 (ci.yaml의 docker-build job이 검증을 담당).
+# canonical deploy path에서 cd-dev/cd-prod가 이 이미지를 pull하여 배포합니다.
 #
 # 생성 이미지:
 #   ghcr.io/<owner>/petnose-spring-api

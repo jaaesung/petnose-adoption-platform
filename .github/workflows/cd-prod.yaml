@@ -1,7 +1,12 @@
-name: CD — Prod 배포 (초안)
+name: CD — Prod Deploy (GHCR Pull Path)
 
 # main 브랜치 기준, 수동 실행(workflow_dispatch)으로만 배포합니다.
 # 자동 배포는 의도치 않은 릴리즈를 방지하기 위해 보수적으로 운영합니다.
+# 실행 전 `publish-images.yaml`이 main 브랜치 최신 이미지를 push 했는지 확인하세요.
+#
+# UNVERIFIED PLACEHOLDER:
+#   - 실제 서버 접근/권한/네트워크는 이 저장소에서 검증할 수 없습니다.
+#   - PROD_* secrets 설정이 필요합니다.
 
 on:
   workflow_dispatch:
@@ -16,16 +21,24 @@ jobs:
     name: Prod 서버 배포
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.confirm == 'yes' }}
+    timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-
-      - name: Prod 배포 (placeholder)
-        # 실제 배포 시 아래 주석을 해제하고 secrets를 설정하세요.
+      - name: SSH 준비
         run: |
-          echo "[INFO] prod 배포 placeholder — 실제 배포 명령을 여기에 작성하세요."
-          # 예시 (SSH 배포):
-          # ssh -i ${{ secrets.PROD_SSH_KEY }} ${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }} \
-          #   "cd /opt/petnose && git pull origin main && bash infra/scripts/deploy.sh"
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.PROD_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Prod 배포 실행
+        run: |
+          set -euo pipefail
+          ssh -o StrictHostKeyChecking=yes \
+            -i ~/.ssh/id_ed25519 \
+            "${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }}" \
+            "cd /opt/petnose && \
+             SPRING_API_IMAGE=ghcr.io/${{ github.repository_owner }}/petnose-spring-api:main-latest \
+             PYTHON_EMBED_IMAGE=ghcr.io/${{ github.repository_owner }}/petnose-python-embed:main-latest \
+             bash infra/scripts/deploy.sh"

@@ -46,7 +46,7 @@ docker compose version
 
 ---
 
-## 4. 프로젝트 클론 및 환경변수 설정
+## 4. 프로젝트 배치 및 환경변수 설정
 
 ```bash
 # 저장소 클론
@@ -62,6 +62,9 @@ nano infra/docker/.env  # prod 값으로 수정
 - `APP_ENV=prod`
 - `SPRING_PROFILES_ACTIVE=prod`
 - `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `SPRING_DATASOURCE_PASSWORD` — 강력한 패스워드로 변경
+- `SPRING_API_IMAGE`, `PYTHON_EMBED_IMAGE` — GHCR 배포 태그 지정
+  (예: `main-latest`, `main-<sha7>`)
+- (private GHCR 사용 시) `GHCR_USERNAME`, `GHCR_TOKEN` 설정
 
 ---
 
@@ -85,13 +88,21 @@ bash infra/scripts/deploy.sh
 
 ---
 
-## 7. 배포 흐름 (이후 업데이트)
+## 7. 배포 흐름 (Canonical)
 
 ```bash
 cd /opt/petnose
-git pull origin main
+# 필요 시 배포 태그 변경 후
+#   SPRING_API_IMAGE=ghcr.io/<owner>/petnose-spring-api:main-<sha7>
+#   PYTHON_EMBED_IMAGE=ghcr.io/<owner>/petnose-python-embed:main-<sha7>
+# 를 .env에 반영
 bash infra/scripts/deploy.sh
 ```
+
+`deploy.sh`는 다음 순서로 동작합니다.
+- `docker compose pull`
+- `docker compose up -d --no-build`
+- post-deploy healthcheck 실패 시 즉시 종료
 
 ---
 

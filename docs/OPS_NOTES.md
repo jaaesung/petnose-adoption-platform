@@ -192,6 +192,22 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 
 ---
 
+## Canonical 배포 경로 (단일화)
+
+배포는 아래 경로만 사용합니다:
+
+1. GitHub Actions `publish-images.yaml`에서 GHCR 이미지 publish
+2. 서버에서 `infra/scripts/deploy.sh` 실행
+3. `deploy.sh` 내부에서:
+   - `docker compose pull`
+   - `docker compose up -d --no-build`
+   - post-deploy healthcheck (`/`, `/actuator/health`)
+4. healthcheck 실패 시 즉시 non-zero 종료 (fail-fast)
+
+즉, **서버에서 `git pull` 후 소스 빌드하는 방식은 사용하지 않습니다.**
+
+---
+
 ## GitHub Branch Protection 권장
 
 Settings → Branches → Add rule (대상: `main`):

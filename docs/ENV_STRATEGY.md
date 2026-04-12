@@ -93,6 +93,17 @@
 | `PROD_USER` | COMMON | prod 서버 SSH 사용자명 | GitHub Actions Secrets |
 | `PROD_HOST` | COMMON | prod 서버 IP 또는 도메인 | GitHub Actions Secrets |
 
+### 배포 이미지 / GHCR 인증 (서버 런타임)
+
+| 변수 | 분류 | 설명 | 사용처 |
+|------|------|------|--------|
+| `SPRING_API_IMAGE` | COMMON | 배포할 Spring API 이미지 태그 | compose.prod.yaml |
+| `PYTHON_EMBED_IMAGE` | COMMON | 배포할 Python Embed 이미지 태그 | compose.prod.yaml |
+| `GHCR_USERNAME` | SECRET (optional) | GHCR login 사용자명 | `infra/scripts/deploy.sh` |
+| `GHCR_TOKEN` | SECRET (optional) | GHCR login 토큰(read:packages) | `infra/scripts/deploy.sh` |
+
+> Canonical deploy path: 서버에서 소스 빌드하지 않고 GHCR 이미지를 pull 하여 배포합니다.
+
 ---
 
 ## 환경별 관리 위치
@@ -142,6 +153,11 @@ SPRING_DATASOURCE_USERNAME=petnose
 SPRING_DATASOURCE_PASSWORD=<강력한_비밀번호>  ← MYSQL_PASSWORD 와 동일
 EMBED_MODEL=mock-v1                   ← 실제 모델 적용 시 변경
 QDRANT_VECTOR_DIM=128
+SPRING_API_IMAGE=ghcr.io/jaaesung/petnose-spring-api:main-latest
+PYTHON_EMBED_IMAGE=ghcr.io/jaaesung/petnose-python-embed:main-latest
+# GHCR private 패키지 사용 시에만 필요
+GHCR_USERNAME=<github_username>
+GHCR_TOKEN=<read_packages_token>
 ... (나머지 COMMON 값들)
 ```
 

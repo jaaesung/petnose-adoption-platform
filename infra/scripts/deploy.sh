@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
-# prod 배포 초안 스크립트
-# 실제 실행 전 .env 파일, secrets 설정, 서버 접근 방법을 확정하세요.
+# Canonical deploy script (GHCR pull-based)
+# - 서버에서 소스 빌드하지 않음
+# - GHCR 이미지 pull 후 compose up
+# - post-deploy healthcheck 실패 시 즉시 종료
+#
+# UNVERIFIED PLACEHOLDER:
+#   - GHCR private pull 인증(GHCR_USERNAME/GHCR_TOKEN)
+#   - 실제 서버 네트워크/방화벽 상태
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,22 +21,79 @@ if [ ! -f "${ENV_FILE}" ]; then
   exit 1
 fi
 
-echo "[INFO] 최신 코드 pull..."
-git pull origin main
+compose_prod() {
+  docker compose \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_BASE}" \
+    -f "${COMPOSE_PROD}" \
+    "$@"
+}
 
-echo "[INFO] 이미지 빌드..."
-docker compose \
-  --env-file "${ENV_FILE}" \
-  -f "${COMPOSE_BASE}" \
-  -f "${COMPOSE_PROD}" \
-  build --no-cache
+read_env_var() {
+  local key="$1"
+  local line
+  line="$(grep -m1 "^${key}=" "${ENV_FILE}" || true)"
+  if [ -z "${line}" ]; then
+    return 0
+  fi
+  printf '%s' "${line#*=}" | sed 's/\r$//'
+}
 
-echo "[INFO] 서비스 재기동..."
-docker compose \
-  --env-file "${ENV_FILE}" \
-  -f "${COMPOSE_BASE}" \
-  -f "${COMPOSE_PROD}" \
-  up -d
+SPRING_IMAGE="$(read_env_var SPRING_API_IMAGE)"
+PYTHON_IMAGE="$(read_env_var PYTHON_EMBED_IMAGE)"
+GHCR_USER="$(read_env_var GHCR_USERNAME)"
+GHCR_TOKEN_VALUE="$(read_env_var GHCR_TOKEN)"
 
-echo "[INFO] 배포 완료."
-echo "  로그 확인: docker compose -f ${COMPOSE_BASE} -f ${COMPOSE_PROD} logs -f"
+echo "[INFO] 배포 대상 이미지"
+echo "  SPRING_API_IMAGE=${SPRING_IMAGE:-<unset, compose.prod 기본값 사용>}"
+echo "  PYTHON_EMBED_IMAGE=${PYTHON_IMAGE:-<unset, compose.prod 기본값 사용>}"
+
+if [ -n "${GHCR_USER}" ] && [ -n "${GHCR_TOKEN_VALUE}" ]; then
+  echo "[INFO] GHCR 로그인 시도..."
+  printf '%s' "${GHCR_TOKEN_VALUE}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+else
+  echo "[WARN] GHCR_USERNAME/GHCR_TOKEN 미설정 — 기존 docker login 상태 또는 public 패키지를 가정합니다. (UNVERIFIED)"
+fi
+
+echo "[INFO] 이미지 pull..."
+compose_prod pull
+
+echo "[INFO] 서비스 기동/갱신 (--no-build)..."
+compose_prod up -d --no-build
+
+check_http_with_retry() {
+  local label="$1"
+  local url="$2"
+  local attempts="${3:-20}"
+  local sleep_sec="${4:-3}"
+
+  local i
+  for i in $(seq 1 "${attempts}"); do
+    if curl -sf --max-time 5 "${url}" > /dev/null 2>&1; then
+      echo "[OK]   ${label}  ->  ${url}"
+      return 0
+    fi
+    echo "[WAIT] ${label} (${i}/${attempts})"
+    sleep "${sleep_sec}"
+  done
+
+  echo "[FAIL] ${label}  ->  ${url}"
+  return 1
+}
+
+echo "[INFO] post-deploy healthcheck..."
+if ! check_http_with_retry "nginx" "http://localhost/" 20 3; then
+  compose_prod ps
+  compose_prod logs --tail=150 nginx spring-api
+  exit 1
+fi
+
+if ! check_http_with_retry "spring-actuator-via-nginx" "http://localhost/actuator/health" 25 3; then
+  compose_prod ps
+  compose_prod logs --tail=200 spring-api nginx python-embed
+  exit 1
+fi
+
+echo "[INFO] 배포 성공."
+echo "  상태 확인: docker compose --env-file ${ENV_FILE} -f ${COMPOSE_BASE} -f ${COMPOSE_PROD} ps"
+echo "  로그 확인: docker compose --env-file ${ENV_FILE} -f ${COMPOSE_BASE} -f ${COMPOSE_PROD} logs -f"

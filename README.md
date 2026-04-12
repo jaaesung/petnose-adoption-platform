@@ -103,12 +103,20 @@ bash infra/scripts/dev-up.sh
 
 ---
 
-## GitHub Actions CI / 이미지 Publish
+## GitHub Actions CI / CD
 
 | 워크플로 | 트리거 | 역할 |
 |----------|--------|------|
 | `ci.yaml` | push(develop/main) + PR | 테스트, Docker 빌드 검증 |
 | `publish-images.yaml` | push(develop/main) | GHCR 이미지 빌드 및 publish |
+| `cd-dev.yaml` | `publish-images.yaml` 성공 + develop | dev 서버 배포 (GHCR pull path) |
+| `cd-prod.yaml` | workflow_dispatch(main 기준) | prod 서버 수동 배포 (GHCR pull path) |
+
+Canonical deployment path:
+1. `publish-images.yaml` 로 GHCR 이미지 생성
+2. 서버에서 `infra/scripts/deploy.sh` 실행
+3. `deploy.sh`가 `docker compose pull` → `up -d --no-build` 실행
+4. post-deploy healthcheck 실패 시 즉시 실패 처리
 
 GHCR 이미지:
 - `ghcr.io/jaaesung/petnose-spring-api:<branch>-latest`

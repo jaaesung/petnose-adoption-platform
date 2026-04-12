@@ -1,6 +1,11 @@
-# prod 환경 오버라이드 초안
-# 사용: docker compose -f compose.yaml -f compose.prod.yaml up -d
-# 실제 배포 전 secrets 관리 방식을 확정하세요.
+# prod 환경 오버라이드 (Canonical Deploy Path)
+# 사용: docker compose --env-file .env -f compose.yaml -f compose.prod.yaml pull
+#      docker compose --env-file .env -f compose.yaml -f compose.prod.yaml up -d --no-build
+#
+# 배포 원칙:
+#   - 서버에서 소스 빌드하지 않음
+#   - GHCR 이미지를 pull 후 기동
+#   - compose.yaml의 build 정의가 있어도 prod 배포에서는 반드시 --no-build 사용
 
 services:
   mysql:
@@ -13,10 +18,12 @@ services:
     ports: []
 
   python-embed:
+    image: ${PYTHON_EMBED_IMAGE:-ghcr.io/jaaesung/petnose-python-embed:main-latest}
     restart: always
     ports: []
 
   spring-api:
+    image: ${SPRING_API_IMAGE:-ghcr.io/jaaesung/petnose-spring-api:main-latest}
     restart: always
     ports: []
     environment:
