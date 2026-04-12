@@ -109,7 +109,7 @@ bash infra/scripts/dev-up.sh
 |----------|--------|------|
 | `ci.yaml` | push(develop/main) + PR | backend-test, python-smoke, integration-smoke, docker-build |
 | `publish-images.yaml` | push(develop/main) | GHCR 이미지 빌드 및 publish |
-| `cd-dev.yaml` | `publish-images.yaml` 성공 + develop | dev 서버 배포 (GHCR pull path) |
+| `cd-dev.yaml` | `publish-images.yaml` 성공 + develop, 또는 수동 dispatch | dev 서버 배포 (GHCR pull path) |
 | `cd-prod.yaml` | workflow_dispatch(main 기준) | prod 서버 수동 배포 (GHCR pull path) |
 
 `ci.yaml`의 `integration-smoke`는 Docker Compose(dev)를 실제로 띄워 아래를 검증합니다:
@@ -124,6 +124,11 @@ bash infra/scripts/dev-up.sh
 - 인증/인가/도메인 API 정합성
 - 실제 AI 모델 추론 품질
 - 실제 서버 배포 경로(CD/SSH/secrets)
+
+Dev CD 수동 검증(권장):
+1. `publish-images.yaml`이 develop 이미지를 push 했는지 확인
+2. `cd-dev.yaml`을 workflow_dispatch로 실행 (`image_tag` 지정 가능)
+3. 실패 시 Actions 로그에서 `deploy.sh` healthcheck fail-fast 로그 확인
 
 Canonical deployment path:
 1. `publish-images.yaml` 로 GHCR 이미지 생성

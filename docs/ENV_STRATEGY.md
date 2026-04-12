@@ -138,6 +138,9 @@ PROD_USER        ← SSH 사용자명
 PROD_HOST        ← prod 서버 주소
 ```
 
+`cd-dev.yaml`은 자동(이미지 publish 성공 + develop) 또는 수동(`workflow_dispatch`)으로 실행할 수 있습니다.
+수동 실행 시 `image_tag` 입력값(예: `develop-latest`, `develop-a1b2c3d`)을 사용합니다.
+
 ### 서버 런타임 (dev 서버 / prod 서버)
 
 서버 내 `/opt/petnose/infra/docker/.env` 파일 또는 시스템 환경변수로 관리:

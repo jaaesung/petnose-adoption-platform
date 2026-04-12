@@ -210,6 +210,25 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 
 ---
 
+## Dev CD 실검증 체크리스트
+
+`cd-dev.yaml`은 두 방식으로 실행됩니다.
+- 자동: `publish-images.yaml` 성공 + `develop` 브랜치
+- 수동: `workflow_dispatch` (원하는 `image_tag` 지정 가능)
+
+필수 선행 조건 (UNVERIFIED, 수동 설정 필요):
+1. GitHub Actions secrets 설정: `DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`
+2. dev 서버에 `/opt/petnose` 배치 및 `infra/scripts/deploy.sh` 실행 가능 상태
+3. 서버 `.env`에 배포/DB 환경변수 설정 (`SPRING_API_IMAGE`, `PYTHON_EMBED_IMAGE` 포함)
+4. GHCR 패키지가 private이면 서버에서 pull 가능한 인증(`GHCR_USERNAME`, `GHCR_TOKEN`)
+
+실패 시 확인 우선순위:
+1. SSH 접속 실패 (키/호스트/방화벽)
+2. GHCR pull 실패 (권한/태그 오타)
+3. `deploy.sh`의 post-deploy healthcheck 실패 (`/`, `/actuator/health`)
+
+---
+
 ## GitHub Branch Protection 권장
 
 Settings → Branches → Add rule (대상: `main`):

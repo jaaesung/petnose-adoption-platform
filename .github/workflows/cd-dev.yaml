@@ -8,6 +8,7 @@ name: CD — Dev Deploy (GHCR Pull Path)
 # 트리거:
 #   - Publish Images to GHCR workflow가 성공(conclusion=success)하고
 #   - 대상 브랜치가 develop일 때만 배포 실행
+#   - 또는 workflow_dispatch 로 수동 검증 배포 실행
 #
 # UNVERIFIED PLACEHOLDER:
 #   - 실제 서버 접근/권한/네트워크는 이 저장소에서 검증할 수 없습니다.
@@ -17,15 +18,64 @@ on:
   workflow_run:
     workflows: ["Publish Images to GHCR"]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "배포할 GHCR 태그 (예: develop-latest, develop-a1b2c3d)"
+        required: true
+        default: "develop-latest"
+
+concurrency:
+  group: cd-dev
+  cancel-in-progress: true
 
 jobs:
   deploy-dev:
     name: Dev 서버 배포
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'develop' }}
+    if: >-
+      ${{
+        (github.event_name == 'workflow_run' &&
+         github.event.workflow_run.conclusion == 'success' &&
+         github.event.workflow_run.head_branch == 'develop')
+        || github.event_name == 'workflow_dispatch'
+      }}
     timeout-minutes: 15
 
     steps:
+      - name: 필수 secrets 사전 점검
+        env:
+          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
+          DEV_USER: ${{ secrets.DEV_USER }}
+          DEV_HOST: ${{ secrets.DEV_HOST }}
+        run: |
+          set -euo pipefail
+          test -n "${DEV_SSH_KEY}" || { echo "::error::Missing secret DEV_SSH_KEY"; exit 1; }
+          test -n "${DEV_USER}" || { echo "::error::Missing secret DEV_USER"; exit 1; }
+          test -n "${DEV_HOST}" || { echo "::error::Missing secret DEV_HOST"; exit 1; }
+
+      - name: 배포 태그 결정
+        id: resolve_tag
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            TAG="develop-${HEAD_SHA:0:7}"
+            SOURCE="workflow_run"
+          else
+            TAG="${{ github.event.inputs.image_tag }}"
+            SOURCE="workflow_dispatch"
+          fi
+
+          if ! echo "${TAG}" | grep -Eq '^[A-Za-z0-9._-]+$'; then
+            echo "::error::Invalid image tag: ${TAG}"
+            exit 1
+          fi
+
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "source=${SOURCE}" >> "${GITHUB_OUTPUT}"
+          echo "[INFO] deploy source=${SOURCE}, tag=${TAG}"
+
       - name: SSH 준비
         run: |
           set -euo pipefail
@@ -37,10 +87,23 @@ jobs:
       - name: Dev 배포 실행
         run: |
           set -euo pipefail
+          OWNER="${{ github.repository_owner }}"
+          TAG="${{ steps.resolve_tag.outputs.tag }}"
+
           ssh -o StrictHostKeyChecking=yes \
+            -o BatchMode=yes \
             -i ~/.ssh/id_ed25519 \
             "${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}" \
-            "cd /opt/petnose && \
-             SPRING_API_IMAGE=ghcr.io/${{ github.repository_owner }}/petnose-spring-api:develop-latest \
-             PYTHON_EMBED_IMAGE=ghcr.io/${{ github.repository_owner }}/petnose-python-embed:develop-latest \
+            "set -euo pipefail; cd /opt/petnose && \
+             SPRING_API_IMAGE=ghcr.io/${OWNER}/petnose-spring-api:${TAG} \
+             PYTHON_EMBED_IMAGE=ghcr.io/${OWNER}/petnose-python-embed:${TAG} \
              bash infra/scripts/deploy.sh"
+
+      - name: 실패 시 확인 가이드
+        if: failure()
+        run: |
+          echo "::error::Dev CD failed."
+          echo "Check 1) DEV_SSH_KEY/DEV_USER/DEV_HOST secrets"
+          echo "Check 2) server SSH/network access"
+          echo "Check 3) /opt/petnose/infra/docker/.env (GHCR auth if private package)"
+          echo "Check 4) deploy.sh output logs (healthcheck fail-fast)"
