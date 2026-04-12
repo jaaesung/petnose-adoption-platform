@@ -47,10 +47,12 @@ Copy-Item infra\docker\.env.example infra\docker\.env
 | 항목 | 기본값 | 수정 필요한 경우 |
 |------|--------|-----------------|
 | `MYSQL_PORT` | `3306` | 로컬에 MySQL이 이미 실행 중이면 `3307`로 변경 |
-| `MYSQL_PASSWORD` | `petnose_dev_pw` | 팀 환경에 따라 변경 가능 |
-| `MYSQL_ROOT_PASSWORD` | `root_dev_pw` | 팀 환경에 따라 변경 가능 |
+| `MYSQL_PASSWORD` | placeholder | 팀 개발용 비밀번호로 변경 (`SPRING_DATASOURCE_PASSWORD`와 동일값 유지) |
+| `MYSQL_ROOT_PASSWORD` | placeholder | 팀 개발용 비밀번호로 변경 |
+| `SPRING_DATASOURCE_PASSWORD` | placeholder | `MYSQL_PASSWORD`와 반드시 동일하게 유지 |
 
-> **절대 `.env` 파일을 git commit하지 마세요.** `.gitignore`로 이미 제외되어 있습니다.
+> **절대 `.env` 파일을 git commit하지 마세요.** `.gitignore`로 이미 제외되어 있습니다.  
+> env/secrets 전략 전체 설명: [docs/ENV_STRATEGY.md](ENV_STRATEGY.md)
 
 ---
 

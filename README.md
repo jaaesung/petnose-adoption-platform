@@ -76,11 +76,13 @@ petnose-adoption-platform/
 | 문서 | 설명 |
 |---|---|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 시스템 구조 및 서비스 책임 |
+| [docs/ENV_STRATEGY.md](docs/ENV_STRATEGY.md) | 환경변수 및 Secrets 전략 |
+| [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) | 팀원 최초 실행 가이드 |
+| [docs/OPS_NOTES.md](docs/OPS_NOTES.md) | 운영 메모 |
 | [docs/DB_VECTOR_ROLE.md](docs/DB_VECTOR_ROLE.md) | MySQL / Qdrant 역할 분리 |
 | [docs/TABLE_DRAFT.md](docs/TABLE_DRAFT.md) | DB 테이블 초안 |
 | [docs/VECTOR_SCHEMA_DRAFT.md](docs/VECTOR_SCHEMA_DRAFT.md) | 벡터 컬렉션 스키마 초안 |
 | [docs/BACKUP_PLAN.md](docs/BACKUP_PLAN.md) | 백업/복구 절차 |
-| [docs/OPS_NOTES.md](docs/OPS_NOTES.md) | 운영 메모 |
 | [docs/API_CONTRACTS/frontend-backend.md](docs/API_CONTRACTS/frontend-backend.md) | Flutter ↔ Spring API 계약 |
 | [docs/API_CONTRACTS/spring-python.md](docs/API_CONTRACTS/spring-python.md) | Spring ↔ Python 계약 |
 | [infra/aws/ec2-setup.md](infra/aws/ec2-setup.md) | EC2 배포 준비 |
@@ -93,7 +95,9 @@ petnose-adoption-platform/
 git clone https://github.com/jaaesung/petnose-adoption-platform.git
 cd petnose-adoption-platform
 cp infra/docker/.env.example infra/docker/.env
-# .env 열어서 로컬 환경에 맞게 수정 (MySQL 포트 충돌 시 MYSQL_PORT=3307)
+# .env 열어서 [SECRET] 항목(비밀번호)을 수정하세요
+# MySQL 포트 충돌 시 MYSQL_PORT=3307 로 변경
+# env/secrets 전략: docs/ENV_STRATEGY.md 참고
 bash infra/scripts/dev-up.sh
 ```
 

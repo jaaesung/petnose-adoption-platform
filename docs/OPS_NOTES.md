@@ -7,6 +7,10 @@
 > **사전 조건:** Docker Desktop, Docker Compose v2  
 > 백엔드를 직접 빌드/테스트하려면 **Java 21** 필요 (`java -version` 확인).
 
+> **env/secrets 전략 전체**: [docs/ENV_STRATEGY.md](ENV_STRATEGY.md) 참고.  
+> `.env.example`의 `[SECRET]` 항목(`MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`)은  
+> 반드시 실제 값으로 교체하고 `MYSQL_PASSWORD`와 `SPRING_DATASOURCE_PASSWORD`는 동일하게 유지하세요.
+
 ### MySQL 포트 충돌 해결
 
 로컬에 MySQL이 3306으로 실행 중이면 컨테이너 포트 충돌이 발생합니다.  
