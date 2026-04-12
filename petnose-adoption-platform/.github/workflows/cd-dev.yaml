@@ -1,0 +1,25 @@
+name: CD — Dev 배포 (초안)
+
+# develop 브랜치에 push 될 때 dev 서버 배포를 트리거합니다.
+# 실제 배포 전 secrets(DEV_SSH_KEY, DEV_HOST 등)를 GitHub Actions secrets에 설정하세요.
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deploy-dev:
+    name: Dev 서버 배포
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dev 서버 배포 (placeholder)
+        # 실제 배포 시 아래 주석을 해제하고 secrets를 설정하세요.
+        run: |
+          echo "[INFO] dev 배포 placeholder — 실제 배포 명령을 여기에 작성하세요."
+          # 예시 (SSH 배포):
+          # ssh -i ${{ secrets.DEV_SSH_KEY }} ${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }} \
+          #   "cd /opt/petnose && git pull origin develop && bash infra/scripts/deploy.sh"

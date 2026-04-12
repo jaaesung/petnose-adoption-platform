@@ -1,0 +1,29 @@
+# prod 환경 오버라이드 초안
+# 사용: docker compose -f compose.yaml -f compose.prod.yaml up -d
+# 실제 배포 전 secrets 관리 방식을 확정하세요.
+
+services:
+  mysql:
+    restart: always
+    # dev에서 열었던 포트를 닫아 외부 접근 차단
+    ports: []
+
+  qdrant:
+    restart: always
+    ports: []
+
+  python-embed:
+    restart: always
+    ports: []
+
+  spring-api:
+    restart: always
+    ports: []
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+  nginx:
+    restart: always
+    ports:
+      - "80:80"
+      # HTTPS 적용 시: - "443:443"

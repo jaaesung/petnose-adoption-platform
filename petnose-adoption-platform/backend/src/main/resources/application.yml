@@ -1,0 +1,56 @@
+spring:
+  application:
+    name: petnose-api
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/petnose?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=UTF-8}
+    username: ${SPRING_DATASOURCE_USERNAME:petnose}
+    password: ${SPRING_DATASOURCE_PASSWORD:petnose_dev_pw}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      connection-timeout: 20000
+      maximum-pool-size: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: false
+
+  servlet:
+    multipart:
+      max-file-size: ${MAX_UPLOAD_SIZE_MB:20}MB
+      max-request-size: ${MAX_UPLOAD_SIZE_MB:20}MB
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+embed:
+  url: ${PYTHON_EMBED_URL:http://localhost:8000}
+
+qdrant:
+  host: ${QDRANT_HOST:qdrant}
+  port: ${QDRANT_PORT:6333}
+  collection: ${QDRANT_COLLECTION:dog_nose_embeddings}
+  vector-dimension: ${QDRANT_VECTOR_DIM:128}
+
+upload:
+  base-path: ${UPLOAD_BASE_PATH:/var/uploads}
+
+logging:
+  level:
+    com.petnose: DEBUG
+    org.springframework.web: INFO

@@ -1,0 +1,103 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      # CMD-SHELL: $$VAR 는 컨테이너 환경변수를 참조 (Compose 변수 치환 아님)
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u$$MYSQL_USER -p$$MYSQL_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - internal
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      # bash /dev/tcp 사용 — curl/wget 없는 minimal 이미지 대응
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null && echo ok || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - internal
+
+  python-embed:
+    build:
+      context: ../../python-embed
+      dockerfile: Dockerfile
+    environment:
+      EMBED_VECTOR_DIM: ${QDRANT_VECTOR_DIM:-128}
+      EMBED_MODEL: ${EMBED_MODEL:-mock-v1}
+      MAX_IMAGE_BYTES: ${MAX_UPLOAD_SIZE_MB:-20}000000
+    volumes:
+      - uploads_data:${UPLOAD_BASE_PATH:-/var/uploads}
+    # healthcheck는 Dockerfile에 정의됨 (python urllib 사용, curl 불필요)
+    networks:
+      - internal
+
+  spring-api:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
+      PYTHON_EMBED_URL: ${PYTHON_EMBED_URL:-http://python-embed:8000}
+      QDRANT_HOST: ${QDRANT_HOST:-qdrant}
+      QDRANT_PORT: ${QDRANT_PORT:-6333}
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-dog_nose_embeddings}
+      QDRANT_VECTOR_DIM: ${QDRANT_VECTOR_DIM:-128}
+      UPLOAD_BASE_PATH: ${UPLOAD_BASE_PATH:-/var/uploads}
+      MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-20}
+    volumes:
+      - uploads_data:${UPLOAD_BASE_PATH:-/var/uploads}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      python-embed:
+        condition: service_healthy
+    networks:
+      - internal
+
+  nginx:
+    image: nginx:1.25-alpine
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      spring-api:
+        condition: service_healthy
+    networks:
+      - internal
+
+volumes:
+  mysql_data:
+  qdrant_storage:
+  uploads_data:
+
+networks:
+  internal:
+    driver: bridge

@@ -1,0 +1,27 @@
+# dev 환경 오버라이드
+# 사용: docker compose -f compose.yaml -f compose.dev.yaml up -d
+# 또는:  bash infra/scripts/dev-up.sh
+
+services:
+  mysql:
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    restart: unless-stopped
+
+  qdrant:
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    restart: unless-stopped
+
+  python-embed:
+    ports:
+      - "${PYTHON_EMBED_PORT:-8000}:8000"
+    restart: unless-stopped
+
+  spring-api:
+    ports:
+      - "${SPRING_APP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  nginx:
+    restart: unless-stopped

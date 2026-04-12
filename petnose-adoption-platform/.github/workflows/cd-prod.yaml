@@ -1,0 +1,31 @@
+name: CD — Prod 배포 (초안)
+
+# main 브랜치 기준, 수동 실행(workflow_dispatch)으로만 배포합니다.
+# 자동 배포는 의도치 않은 릴리즈를 방지하기 위해 보수적으로 운영합니다.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "prod 배포를 진행합니까? (yes 입력)"
+        required: true
+        default: "no"
+
+jobs:
+  deploy-prod:
+    name: Prod 서버 배포
+    runs-on: ubuntu-latest
+    if: ${{ github.event.inputs.confirm == 'yes' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Prod 배포 (placeholder)
+        # 실제 배포 시 아래 주석을 해제하고 secrets를 설정하세요.
+        run: |
+          echo "[INFO] prod 배포 placeholder — 실제 배포 명령을 여기에 작성하세요."
+          # 예시 (SSH 배포):
+          # ssh -i ${{ secrets.PROD_SSH_KEY }} ${{ secrets.PROD_USER }}@${{ secrets.PROD_HOST }} \
+          #   "cd /opt/petnose && git pull origin main && bash infra/scripts/deploy.sh"
