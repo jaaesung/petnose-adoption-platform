@@ -103,13 +103,19 @@ bash infra/scripts/dev-up.sh
 
 ---
 
-## GitHub Actions CI
+## GitHub Actions CI / 이미지 Publish
 
-`main` 또는 `develop` 브랜치로 push 하거나 PR을 열면 CI가 자동 실행됩니다.
+| 워크플로 | 트리거 | 역할 |
+|----------|--------|------|
+| `ci.yaml` | push(develop/main) + PR | 테스트, Docker 빌드 검증 |
+| `publish-images.yaml` | push(develop/main) | GHCR 이미지 빌드 및 publish |
 
-- CI 워크플로: `.github/workflows/ci.yaml`
-- 포함 job: `backend-test` / `python-smoke` / `docker-build`
-- 결과 확인: `https://github.com/jaaesung/petnose-adoption-platform/actions`
+GHCR 이미지:
+- `ghcr.io/jaaesung/petnose-spring-api:<branch>-latest`
+- `ghcr.io/jaaesung/petnose-python-embed:<branch>-latest`
+
+결과 확인: `https://github.com/jaaesung/petnose-adoption-platform/actions`  
+태그 전략 및 운영 상세: [docs/OPS_NOTES.md](docs/OPS_NOTES.md)
 
 ---
 
