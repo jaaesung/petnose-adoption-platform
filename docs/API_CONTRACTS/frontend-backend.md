@@ -2,6 +2,14 @@
 
 > 이 문서는 초기 API 계약 초안입니다. 실제 구현이 확정되면 이 문서를 갱신하거나 Swagger/OpenAPI 문서로 대체합니다.
 
+## MVP Canonical Baseline (2026-04)
+
+- 사용자 PK(`users.id`)는 **BIGINT** 기준입니다. API 예시의 `user_id`도 숫자형으로 표기합니다.
+- 강아지 PK(`dogs.id`)는 **UUID 문자열** 기준입니다.
+- 보호소/분양자 프로필 테이블 명칭은 **`shelter_profiles`** 로 통일합니다.
+- Spring ↔ Python 임베딩 응답 필드는 **`dimension`** 을 사용합니다(`dim` 사용 금지).
+- TODO: 사용자 외부 노출 ID를 UUID로 분리할지(`public_id`)는 추후 도메인 설계 단계에서 결정합니다.
+
 Base URL: `http://<host>/api`  
 인증: `Authorization: Bearer <JWT>` 헤더
 
@@ -24,7 +32,7 @@ Request:
 
 Response 201:
 {
-  "user_id": "uuid",
+  "user_id": 101,
   "email": "user@example.com",
   "role": "ADOPTER"
 }
@@ -105,7 +113,7 @@ Response 200:
     "name": "초코",
     "breed": "말티즈",
     "owner": {
-      "user_id": "uuid",
+      "user_id": 101,
       "email": "owner@example.com"
     }
   }
@@ -135,10 +143,10 @@ Response 200:
 {
   "content": [
     {
-      "post_id": "uuid",
+      "post_id": 5001,
       "title": "말티즈 분양합니다",
       "dog": { "dog_id": "...", "breed": "말티즈", "name": "초코" },
-      "author": { "user_id": "...", "shelter_name": "행복보호소" },
+      "author": { "user_id": 101, "shelter_name": "행복보호소" },
       "status": "OPEN",
       "created_at": "2026-04-12T10:00:00Z"
     }
@@ -164,7 +172,7 @@ Request:
 
 Response 201:
 {
-  "post_id": "uuid",
+  "post_id": 5001,
   "status": "OPEN"
 }
 ```

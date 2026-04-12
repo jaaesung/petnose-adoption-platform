@@ -1,6 +1,6 @@
 # API 계약 — Spring Boot ↔ Python Embed
 
-> Spring Boot(`spring-api`)가 Python 임베딩 서비스(`python-embed`)를 호출하는 계약 초안입니다.  
+> Spring Boot(`spring-api`)가 Python 임베딩 서비스(`python-embed`)를 호출하는 **MVP 기준 계약**입니다.  
 > Flutter는 Python 서비스에 직접 접근하지 않습니다.
 
 Base URL (내부): `http://python-embed:8000`  
@@ -21,21 +21,26 @@ Form fields:
 
 Response 200:
 {
+  "status": "ok",
   "vector": [0.12, -0.34, 0.56, ...],  // float 배열, 고정 차원
-  "dim": 512,
-  "model": "petnose-v1"  // 사용된 모델 식별자
+  "dimension": 128,                    // 필드명은 dim이 아니라 dimension
+  "model": "mock-v1"                   // 사용된 모델 식별자
 }
 
 Response 400:
 {
-  "error": "INVALID_IMAGE",
-  "message": "이미지를 처리할 수 없습니다."
+  "detail": {
+    "error": "INVALID_IMAGE",
+    "message": "이미지를 처리할 수 없습니다."
+  }
 }
 
 Response 500:
 {
-  "error": "EMBED_FAILED",
-  "message": "임베딩 생성 중 오류가 발생했습니다."
+  "detail": {
+    "error": "EMBED_FAILED",
+    "message": "임베딩 생성 중 오류가 발생했습니다."
+  }
 }
 ```
 
@@ -51,7 +56,9 @@ GET /health
 Response 200:
 {
   "status": "ok",
-  "model_loaded": true
+  "model_loaded": true,
+  "model": "mock-v1",
+  "vector_dim": 128
 }
 ```
 
@@ -74,9 +81,8 @@ Response 200:
 
 ### Retry
 
-- Python 서비스가 일시적으로 응답 불가 시 최대 2회 재시도합니다.
-- 재시도 후에도 실패하면 Spring Boot는 `EMBED_FAILED` 에러를 클라이언트에 반환합니다.
-- 무한 재시도는 금지합니다. 타임아웃 후 빠른 실패(fail-fast)를 권장합니다.
+- TODO: 현재 `backend`의 `EmbedClient`에는 재시도 로직이 구현되어 있지 않습니다.
+- 재시도를 추가할 경우 최대 2회, fail-fast 원칙을 유지합니다.
 
 ### 에러 처리
 

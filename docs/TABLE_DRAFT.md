@@ -1,6 +1,7 @@
 # DB 테이블 설계 초안
 
-> 이 문서는 1차 설계 초안입니다. 컬럼을 확정하지 않았으며, 구현 진행에 따라 변경됩니다.
+> 이 문서는 1차 설계 초안입니다.  
+> 단, **테이블명/PK 타입은 `backend/src/main/resources/db/migration/V1__baseline.sql`을 canonical 기준으로 고정**합니다.
 
 ---
 
@@ -12,14 +13,16 @@
 
 | 컬럼 후보 | 설명 |
 |---|---|
-| id | PK, UUID 또는 BIGINT |
+| id | PK, BIGINT (AUTO_INCREMENT) |
 | email | 로그인 식별자, 유니크 |
 | password_hash | bcrypt 해시 |
 | role | `ADOPTER`, `SHELTER`, `ADMIN` 등 |
 | created_at | 가입 시각 |
 | is_active | 탈퇴/정지 여부 |
 
-### `seller_profiles`
+TODO: 외부 API 노출용 사용자 식별자를 UUID(`public_id`)로 별도 둘지는 도메인 설계 단계에서 결정.
+
+### `shelter_profiles`
 
 보호소 또는 분양자 프로필입니다. `users`와 1:1 관계입니다.
 
@@ -108,7 +111,7 @@
 ## 관계 요약
 
 ```
-users 1 ── 1 seller_profiles
+users 1 ── 1 shelter_profiles
 users 1 ── N dogs
 dogs  1 ── N dog_images
 dogs  1 ── 1 adoption_posts (일반적으로)
