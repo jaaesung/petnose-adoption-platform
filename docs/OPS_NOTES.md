@@ -132,7 +132,9 @@ docker compose --env-file infra/docker/.env \
 
 - 데이터 볼륨 (`mysql_data`, `qdrant_storage`, `uploads_data`)은 `docker compose down`으로 삭제되지 않습니다.
 - 완전 초기화: `docker compose ... down -v` (데이터 영구 삭제 주의)
-- 볼륨 이름은 `petnose-adoption-platform_mysql_data` 형태로 생성됩니다 (프로젝트명 prefix).
+- Compose 프로젝트명은 `infra/docker/compose.yaml`의 `name: petnose`로 고정합니다.
+- 따라서 볼륨 이름은 `petnose_mysql_data`, `petnose_qdrant_storage`, `petnose_uploads_data` 형태로 생성됩니다.
+- `backup.sh`/`restore.sh`는 이 실제 마운트를 `docker compose ... exec`로 사용하므로, 볼륨명을 수동으로 입력할 필요가 없습니다.
 
 ---
 

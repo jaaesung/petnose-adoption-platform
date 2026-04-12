@@ -1,37 +1,74 @@
 #!/usr/bin/env bash
-# 백업 초안 스크립트 — MySQL dump + 업로드 파일 백업
+# 백업 스크립트 — MySQL dump + 업로드 파일 백업
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="${SCRIPT_DIR}/../docker"
 ENV_FILE="${DOCKER_DIR}/.env"
+COMPOSE_BASE="${DOCKER_DIR}/compose.yaml"
+COMPOSE_DEV="${DOCKER_DIR}/compose.dev.yaml"
 BACKUP_DIR="${SCRIPT_DIR}/../../backups"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# .env 로드
+# .env 확인
 if [ ! -f "${ENV_FILE}" ]; then
   echo "[ERROR] .env 파일이 없습니다."
   exit 1
 fi
-source "${ENV_FILE}"
+
+compose_dev() {
+  docker compose \
+    --env-file "${ENV_FILE}" \
+    -f "${COMPOSE_BASE}" \
+    -f "${COMPOSE_DEV}" \
+    "$@"
+}
+
+require_running_service() {
+  local service="$1"
+  if ! compose_dev ps --services --status running | grep -qx "${service}"; then
+    echo "[ERROR] '${service}' 서비스가 실행 중이 아닙니다. dev 환경을 먼저 기동하세요."
+    exit 1
+  fi
+}
+
+read_env_var() {
+  local key="$1"
+  local line
+  line="$(grep -m1 "^${key}=" "${ENV_FILE}" || true)"
+  if [ -z "${line}" ]; then
+    return 0
+  fi
+  printf '%s' "${line#*=}" | sed 's/\r$//'
+}
+
+MYSQL_USER_VALUE="$(read_env_var MYSQL_USER)"
+MYSQL_PASSWORD_VALUE="$(read_env_var MYSQL_PASSWORD)"
+MYSQL_DATABASE_VALUE="$(read_env_var MYSQL_DATABASE)"
+UPLOAD_BASE_PATH_VALUE="$(read_env_var UPLOAD_BASE_PATH)"
+UPLOAD_BASE_PATH_VALUE="${UPLOAD_BASE_PATH_VALUE:-/var/uploads}"
+
+if [ -z "${MYSQL_USER_VALUE}" ] || [ -z "${MYSQL_PASSWORD_VALUE}" ] || [ -z "${MYSQL_DATABASE_VALUE}" ]; then
+  echo "[ERROR] MYSQL_USER / MYSQL_PASSWORD / MYSQL_DATABASE 값이 .env에 필요합니다."
+  exit 1
+fi
+
+require_running_service "mysql"
+require_running_service "spring-api"
 
 mkdir -p "${BACKUP_DIR}/mysql" "${BACKUP_DIR}/uploads"
 
 # 1. MySQL dump
 echo "[INFO] MySQL 백업 시작..."
-docker compose --env-file "${ENV_FILE}" -f "${DOCKER_DIR}/compose.yaml" \
-  exec -T mysql \
-  mysqldump -u "${MYSQL_USER}" -p"${MYSQL_PASSWORD}" "${MYSQL_DATABASE}" \
+compose_dev exec -T mysql \
+  mysqldump -u "${MYSQL_USER_VALUE}" -p"${MYSQL_PASSWORD_VALUE}" "${MYSQL_DATABASE_VALUE}" \
   | gzip > "${BACKUP_DIR}/mysql/backup_${TIMESTAMP}.sql.gz"
 echo "[OK]   MySQL 백업 완료: backup_${TIMESTAMP}.sql.gz"
 
-# 2. 업로드 파일 백업 (볼륨 -> 타르볼)
-echo "[INFO] 업로드 파일 백업 시작..."
-docker run --rm \
-  -v petnose_uploads_data:/var/uploads:ro \
-  -v "${BACKUP_DIR}/uploads:/backup" \
-  alpine \
-  tar -czf "/backup/uploads_${TIMESTAMP}.tar.gz" -C /var/uploads .
+# 2. 업로드 파일 백업 (spring-api 컨테이너의 uploads 마운트를 통해 수행)
+echo "[INFO] 업로드 파일 백업 시작... (path=${UPLOAD_BASE_PATH_VALUE})"
+compose_dev exec -T spring-api sh -lc "tar -czf - -C '${UPLOAD_BASE_PATH_VALUE}' ." \
+  > "${BACKUP_DIR}/uploads/uploads_${TIMESTAMP}.tar.gz"
 echo "[OK]   업로드 백업 완료: uploads_${TIMESTAMP}.tar.gz"
 
 # 3. Qdrant 스냅샷 (선택 — Qdrant 컨테이너가 올라와 있을 때만)

@@ -10,6 +10,9 @@
 - 방법: `infra/scripts/backup.sh` 실행
 - 저장 위치: 로컬 `backups/mysql/` 디렉토리
 
+> 스크립트는 `docker compose --env-file infra/docker/.env -f compose.yaml -f compose.dev.yaml exec` 경로를 사용합니다.  
+> Compose 프로젝트명은 `name: petnose`로 고정되어 볼륨/컨테이너 prefix가 일관됩니다.
+
 ### Prod
 
 - 주기: 매일 새벽 자동 실행 (cron 또는 EC2 스케줄러)
@@ -90,3 +93,5 @@ POST http://localhost:6333/collections/dog_nose_embeddings/snapshots
 - 백업 파일에 DB 패스워드 등 민감 정보가 포함될 수 있으므로 저장소에 커밋하지 않습니다.
 - 복구 테스트를 주기적으로 수행하여 실제 복구 가능 여부를 확인합니다.
 - prod 환경에서는 백업 스크립트 실행 결과를 로그로 남깁니다.
+- `backup.sh`/`restore.sh`는 업로드 파일 처리 시 `spring-api` 컨테이너의 `${UPLOAD_BASE_PATH}` 마운트를 사용합니다.
+- 따라서 복구/백업 실행 전 dev 스택(`spring-api`, `mysql`)이 실행 중이어야 합니다.
