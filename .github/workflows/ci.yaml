@@ -56,6 +56,91 @@ jobs:
       - name: smoke 테스트 (app.main import 확인)
         run: python -c "from app.main import app; print('FastAPI app import OK')"
 
+  integration-smoke:
+    name: Integration smoke (Compose)
+    runs-on: ubuntu-latest
+    needs: [backend-test, python-smoke]
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .env 준비
+        run: cp infra/docker/.env.example infra/docker/.env
+
+      - name: Compose 기동 (dev)
+        run: |
+          docker compose \
+            --env-file infra/docker/.env \
+            -f infra/docker/compose.yaml \
+            -f infra/docker/compose.dev.yaml \
+            up -d --build
+
+      - name: 통합 스모크 검증
+        run: |
+          set -euo pipefail
+
+          compose_dev() {
+            docker compose \
+              --env-file infra/docker/.env \
+              -f infra/docker/compose.yaml \
+              -f infra/docker/compose.dev.yaml \
+              "$@"
+          }
+
+          on_error() {
+            echo "[ERROR] Integration smoke 실패. 컨테이너 상태/로그를 출력합니다."
+            compose_dev ps || true
+            compose_dev logs --tail=200 spring-api python-embed mysql qdrant nginx || true
+          }
+          trap on_error ERR
+
+          echo "[INFO] nginx 경유 actuator 대기..."
+          for i in $(seq 1 40); do
+            if curl -fsS --max-time 5 http://localhost/actuator/health > /dev/null; then
+              break
+            fi
+            sleep 3
+          done
+
+          echo "[INFO] actuator health 확인"
+          curl -fsS http://localhost/actuator/health > /tmp/actuator.json
+          grep -q "\"status\"" /tmp/actuator.json
+
+          echo "[INFO] dev ping 확인"
+          curl -fsS http://localhost:8080/api/dev/ping > /tmp/dev-ping.json
+          grep -q "\"status\":\"ok\"" /tmp/dev-ping.json
+
+          echo "[INFO] Flyway 적용 여부 확인"
+          MYSQL_USER_VALUE="$(grep -m1 '^MYSQL_USER=' infra/docker/.env | cut -d= -f2- | tr -d '\r')"
+          MYSQL_PASSWORD_VALUE="$(grep -m1 '^MYSQL_PASSWORD=' infra/docker/.env | cut -d= -f2- | tr -d '\r')"
+          MYSQL_DATABASE_VALUE="$(grep -m1 '^MYSQL_DATABASE=' infra/docker/.env | cut -d= -f2- | tr -d '\r')"
+          FLYWAY_COUNT="$(compose_dev exec -T mysql mysql -u"${MYSQL_USER_VALUE}" -p"${MYSQL_PASSWORD_VALUE}" -D"${MYSQL_DATABASE_VALUE}" -Nse "SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")"
+          test "${FLYWAY_COUNT:-0}" -ge 1
+
+          echo "[INFO] Spring -> Python 연결 확인"
+          curl -fsS http://localhost:8080/api/dev/embed-ping > /tmp/embed-ping.json
+          grep -q "\"embed_service_healthy\":true" /tmp/embed-ping.json
+
+          echo "[INFO] Spring -> Python /embed 호출 확인"
+          echo "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO7+2d8AAAAASUVORK5CYII=" | base64 -d > /tmp/smoke.png
+          curl -fsS -X POST "http://localhost:8080/api/dev/embed-sample" \
+            -F "image=@/tmp/smoke.png;type=image/png" > /tmp/embed-sample.json
+          grep -q "\"status\":\"ok\"" /tmp/embed-sample.json
+
+          echo "[INFO] Qdrant 컬렉션 확인 (initializer 경로)"
+          curl -fsS http://localhost:6333/collections/dog_nose_embeddings > /tmp/qdrant-collection.json
+          grep -q "\"status\":\"ok\"" /tmp/qdrant-collection.json
+
+      - name: cleanup compose (always)
+        if: always()
+        run: |
+          docker compose \
+            --env-file infra/docker/.env \
+            -f infra/docker/compose.yaml \
+            -f infra/docker/compose.dev.yaml \
+            down -v || true
+
   docker-build:
     name: Docker 이미지 빌드 확인
     runs-on: ubuntu-latest

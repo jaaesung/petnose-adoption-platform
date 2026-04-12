@@ -107,10 +107,23 @@ bash infra/scripts/dev-up.sh
 
 | 워크플로 | 트리거 | 역할 |
 |----------|--------|------|
-| `ci.yaml` | push(develop/main) + PR | 테스트, Docker 빌드 검증 |
+| `ci.yaml` | push(develop/main) + PR | backend-test, python-smoke, integration-smoke, docker-build |
 | `publish-images.yaml` | push(develop/main) | GHCR 이미지 빌드 및 publish |
 | `cd-dev.yaml` | `publish-images.yaml` 성공 + develop | dev 서버 배포 (GHCR pull path) |
 | `cd-prod.yaml` | workflow_dispatch(main 기준) | prod 서버 수동 배포 (GHCR pull path) |
+
+`ci.yaml`의 `integration-smoke`는 Docker Compose(dev)를 실제로 띄워 아래를 검증합니다:
+- Spring 기동 + `GET /actuator/health`
+- Flyway 마이그레이션 적용(`flyway_schema_history` 확인)
+- Spring → Python 연결(`/api/dev/embed-ping`)
+- Spring → Python `/embed` 호출(`/api/dev/embed-sample`)
+- Qdrant 컬렉션 초기화 경로(`GET /collections/dog_nose_embeddings`)
+
+`integration-smoke`가 아직 보장하지 않는 것:
+- Flutter ↔ backend E2E
+- 인증/인가/도메인 API 정합성
+- 실제 AI 모델 추론 품질
+- 실제 서버 배포 경로(CD/SSH/secrets)
 
 Canonical deployment path:
 1. `publish-images.yaml` 로 GHCR 이미지 생성
