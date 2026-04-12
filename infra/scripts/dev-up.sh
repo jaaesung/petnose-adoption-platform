@@ -23,11 +23,7 @@ docker compose \
   -f "${COMPOSE_DEV}" \
   up -d --build
 
-if [ $? -ne 0 ]; then
-  echo "[ERROR] docker compose 실행에 실패했습니다. 위 로그를 확인하세요."
-  exit 1
-fi
-
 echo "[INFO] 서비스가 기동되었습니다."
-echo "  접속: http://localhost"
-echo "  로그: docker compose -f ${COMPOSE_BASE} -f ${COMPOSE_DEV} logs -f"
+echo "  접속:      http://localhost"
+echo "  헬스체크:  bash infra/scripts/healthcheck.sh"
+echo "  로그:      docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml logs -f"

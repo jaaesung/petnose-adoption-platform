@@ -25,6 +25,8 @@ jobs:
           distribution: 'temurin'
 
       # gradlew 없이 gradle 명령을 직접 사용 (wrapper jar 불필요)
+      # TODO: gradle/actions/setup-gradle@v4 로 업그레이드 시 Node 20 deprecation 경고 해소 가능
+      #       현재는 CI 안정성 우선으로 @v3 유지
       - name: Gradle 설정
         uses: gradle/actions/setup-gradle@v3
         with:

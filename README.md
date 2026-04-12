@@ -30,7 +30,8 @@ Flutter 앱 → Spring Boot API → Python 임베딩 서비스 → Qdrant 벡터
 
 ## 빠른 시작 (로컬 개발)
 
-**사전 조건:** Docker Desktop, Docker Compose v2
+**사전 조건:** Docker Desktop, Docker Compose v2  
+백엔드를 로컬에서 직접 빌드/테스트하려면 **Java 21** (`JAVA_HOME` 설정 필요).
 
 ```bash
 # 1. 환경변수 파일 준비
@@ -116,3 +117,11 @@ bash infra/scripts/dev-up.sh
 - **`.env` 파일은 절대 커밋하지 않는다.** `.env.example`만 관리한다.
 - **서비스별 포트/환경변수명은 `compose.yaml`과 문서를 기준으로 통일한다.**
 - 각 서비스 디렉토리의 README를 참고해 로컬 실행 방법을 확인한다.
+
+## Branch Protection 권장 (GitHub 설정)
+
+GitHub 저장소 Settings → Branches → Add rule (`main`) 에서 아래를 권장한다:
+
+- `main` 직접 push 금지 (require PR)
+- PR merge 전 CI 통과 필수 (`Status checks: CI`)
+- 최소 1인 리뷰 승인 필요

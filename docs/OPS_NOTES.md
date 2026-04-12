@@ -4,6 +4,18 @@
 
 ## 로컬 실행
 
+> **사전 조건:** Docker Desktop, Docker Compose v2  
+> 백엔드를 직접 빌드/테스트하려면 **Java 21** 필요 (`java -version` 확인).
+
+### MySQL 포트 충돌 해결
+
+로컬에 MySQL이 3306으로 실행 중이면 컨테이너 포트 충돌이 발생합니다.  
+`infra/docker/.env`에서 `MYSQL_PORT=3307`로 변경하면 해결됩니다:
+
+```dotenv
+MYSQL_PORT=3307
+```
+
 ### Linux / macOS (bash)
 
 ```bash
@@ -118,3 +130,30 @@ docker compose --env-file infra/docker/.env \
 `.env`에 `EMBED_MODEL=mock-v1`이 설정되어 있으면 실제 모델 없이도 동작합니다.  
 mock 모드에서는 이미지 SHA-256 해시 기반으로 재현 가능한 더미 벡터(128차원)를 반환합니다.  
 실제 모델 적용 시 `python-embed/app/main.py`의 `_load_model()` 함수를 구현하세요.
+
+---
+
+## Dev 전용 엔드포인트 (`/api/dev/*`)
+
+`DevController`는 `@Profile("dev")`로 격리되어 있습니다.
+
+| 환경 | `SPRING_PROFILES_ACTIVE` | `/api/dev/*` 활성화 |
+|------|--------------------------|---------------------|
+| dev (로컬/개발 서버) | `dev` | ✅ 활성화 |
+| test (CI `gradle test`) | `test` | ❌ 비활성화 |
+| prod | `prod` | ❌ 비활성화 |
+
+`compose.dev.yaml`에서 `SPRING_PROFILES_ACTIVE: dev`를 명시합니다.  
+`compose.prod.yaml`에서 `SPRING_PROFILES_ACTIVE: prod`가 설정되어 있어 prod 배포 시 자동 격리됩니다.
+
+---
+
+## GitHub Branch Protection 권장
+
+Settings → Branches → Add rule (대상: `main`):
+
+- `main` 직접 push 금지 — PR을 통해서만 merge
+- Status check 필수: `CI / Spring Boot 테스트` + `CI / Python smoke 테스트` + `CI / Docker 이미지 빌드 확인`
+- 최소 1인 리뷰 승인 후 merge
+
+> 현재는 설정되어 있지 않으므로 저장소 관리자가 GitHub UI에서 직접 설정해야 합니다.

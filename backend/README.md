@@ -29,7 +29,7 @@ MySQL, Qdrant, Python Embed 서비스와 통신합니다.
 | MySQL 연결 | 구현됨 (JPA ddl-auto: update) |
 | Python embed 클라이언트 | 구현됨 (`EmbedClient`) |
 | Qdrant 컬렉션 초기화 | 구현됨 (`QdrantInitializer`) |
-| Dev 테스트 엔드포인트 | 구현됨 (`/api/dev/*`) |
+| Dev 테스트 엔드포인트 | 구현됨 (`/api/dev/*`, **dev profile 전용**) |
 | 도메인 비즈니스 로직 | 추후 구현 예정 |
 
 ---
@@ -45,6 +45,7 @@ bash infra/scripts/dev-up.sh
 
 ```bash
 cd backend
+# Java 21 필수 (로컬 JAVA_HOME=Java21 확인 후 실행)
 # Gradle 8.7 필요 (gradle/actions/setup-gradle@v3 또는 직접 설치)
 gradle bootRun
 ```
@@ -65,8 +66,10 @@ gradle bootJar --no-daemon
 
 ```bash
 cd backend
-gradle test --no-daemon
+# Java 21 필수 (CI: actions/setup-java@v4 java-version=21)
+gradle test --no-daemon --stacktrace
 # H2 인메모리 DB 사용 — MySQL 없이 실행 가능
+# test profile: DevController 로드 안 함 (@Profile("dev") 전용)
 ```
 
 ---
@@ -86,7 +89,8 @@ gradle test --no-daemon
 
 ## Dev 엔드포인트
 
-> `[DEV ONLY]` — 도메인 구현 후 제거 또는 profile 분기 예정
+> `[DEV ONLY]` — `@Profile("dev")` 적용됨. `SPRING_PROFILES_ACTIVE=dev` 일 때만 활성화됩니다.  
+> prod 환경(`SPRING_PROFILES_ACTIVE=prod`)에서는 이 컨트롤러가 로드되지 않습니다.
 
 | 경로 | 설명 |
 |---|---|
