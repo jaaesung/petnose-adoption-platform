@@ -4,6 +4,7 @@ import com.petnose.api.client.EmbedClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Profile;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -14,8 +15,9 @@ import java.util.Map;
 /**
  * [DEV ONLY] 개발 및 연결 검증용 엔드포인트.
  * 이 컨트롤러는 도메인 로직과 무관하며, 연결 상태 확인 목적으로만 사용합니다.
- * prod 배포 시 profile 분기 또는 삭제를 권장합니다.
+ * dev 프로파일에서만 활성화됩니다. test/prod 환경에는 로드되지 않습니다.
  */
+@Profile("dev")
 @Slf4j
 @RestController
 @RequestMapping("/api/dev")
@@ -24,7 +26,7 @@ public class DevController {
 
     private final EmbedClient embedClient;
 
-    @Value("${spring.application.name}")
+    @Value("${spring.application.name:petnose-api}")
     private String appName;
 
     @Value("${qdrant.host}")
