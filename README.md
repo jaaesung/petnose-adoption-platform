@@ -134,7 +134,7 @@ Canonical deployment path:
 1. `publish-images.yaml` 로 GHCR 이미지 생성
 2. 서버에서 `infra/scripts/deploy.sh` 실행
 3. `deploy.sh`가 `docker compose pull` → `up -d --no-build` 실행
-4. post-deploy healthcheck 실패 시 즉시 실패 처리
+4. post-deploy healthcheck(`http://localhost/actuator/health`, nginx 경유) 실패 시 즉시 실패 처리
 
 GHCR 이미지:
 - `ghcr.io/jaaesung/petnose-spring-api:<branch>-latest`

@@ -102,7 +102,7 @@ bash infra/scripts/deploy.sh
 `deploy.sh`는 다음 순서로 동작합니다.
 - `docker compose pull`
 - `docker compose up -d --no-build`
-- post-deploy healthcheck 실패 시 즉시 종료
+- post-deploy healthcheck(`http://localhost/actuator/health`, nginx 경유) 실패 시 즉시 종료
 
 ---
 

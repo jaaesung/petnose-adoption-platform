@@ -81,14 +81,17 @@ check_http_with_retry() {
   return 1
 }
 
-echo "[INFO] post-deploy healthcheck..."
-if ! check_http_with_retry "nginx" "http://localhost/" 20 3; then
-  compose_prod ps
-  compose_prod logs --tail=150 nginx spring-api
-  exit 1
-fi
+# Canonical post-deploy healthcheck target:
+#   - actuator endpoint through nginx
+#   - do not gate deploy success on "/" because root 2xx is not guaranteed
+HEALTHCHECK_LABEL="${DEPLOY_HEALTHCHECK_LABEL:-spring-actuator-via-nginx}"
+HEALTHCHECK_URL="${DEPLOY_HEALTHCHECK_URL:-http://localhost/actuator/health}"
+HEALTHCHECK_ATTEMPTS="${DEPLOY_HEALTHCHECK_ATTEMPTS:-25}"
+HEALTHCHECK_SLEEP_SEC="${DEPLOY_HEALTHCHECK_SLEEP_SEC:-3}"
 
-if ! check_http_with_retry "spring-actuator-via-nginx" "http://localhost/actuator/health" 25 3; then
+echo "[INFO] post-deploy healthcheck..."
+echo "  target: ${HEALTHCHECK_URL} (${HEALTHCHECK_LABEL})"
+if ! check_http_with_retry "${HEALTHCHECK_LABEL}" "${HEALTHCHECK_URL}" "${HEALTHCHECK_ATTEMPTS}" "${HEALTHCHECK_SLEEP_SEC}"; then
   compose_prod ps
   compose_prod logs --tail=200 spring-api nginx python-embed
   exit 1

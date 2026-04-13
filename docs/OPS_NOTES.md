@@ -203,7 +203,7 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 3. `deploy.sh` 내부에서:
    - `docker compose pull`
    - `docker compose up -d --no-build`
-   - post-deploy healthcheck (`/`, `/actuator/health`)
+   - post-deploy healthcheck (`/actuator/health` via nginx, canonical)
 4. healthcheck 실패 시 즉시 non-zero 종료 (fail-fast)
 
 즉, **서버에서 `git pull` 후 소스 빌드하는 방식은 사용하지 않습니다.**
@@ -225,7 +225,7 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 실패 시 확인 우선순위:
 1. SSH 접속 실패 (키/호스트/방화벽)
 2. GHCR pull 실패 (권한/태그 오타)
-3. `deploy.sh`의 post-deploy healthcheck 실패 (`/`, `/actuator/health`)
+3. `deploy.sh`의 post-deploy healthcheck 실패 (`/actuator/health` via nginx)
 
 ---
 
