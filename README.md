@@ -125,10 +125,16 @@ bash infra/scripts/dev-up.sh
 - 실제 AI 모델 추론 품질
 - 실제 서버 배포 경로(CD/SSH/secrets)
 
-Dev CD 수동 검증(권장):
-1. `publish-images.yaml`이 develop 이미지를 push 했는지 확인
-2. `cd-dev.yaml`을 workflow_dispatch로 실행 (`image_tag` 지정 가능)
-3. 실패 시 Actions 로그에서 `deploy.sh` healthcheck fail-fast 로그 확인
+Dev CD one-run validation (recommended):
+1. Confirm `publish-images.yaml` pushed both images for the same develop tag.
+2. In GitHub Actions, run `cd-dev.yaml` with `workflow_dispatch` and set `image_tag` (`develop-latest` or `develop-<sha7>`).
+3. `cd-dev.yaml` now fail-fast checks:
+   - required secrets (`DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`)
+   - GHCR tag existence for both images
+   - SSH connectivity
+   - remote preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
+4. Deployment succeeds only when `infra/scripts/deploy.sh` completes and post-deploy healthcheck (`http://localhost/actuator/health`) passes.
+5. If it fails, use workflow logs + [docs/OPS_NOTES.md](docs/OPS_NOTES.md) dev CD checklist to resolve.
 
 Canonical deployment path:
 1. `publish-images.yaml` 로 GHCR 이미지 생성

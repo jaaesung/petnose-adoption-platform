@@ -104,6 +104,27 @@
 
 > Canonical deploy path: 서버에서 소스 빌드하지 않고 GHCR 이미지를 pull 하여 배포합니다.
 
+### Dev CD (current practical requirements)
+
+`cd-dev.yaml` currently enforces fail-fast checks before remote deploy:
+- required secrets exist: `DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`
+- `image_tag` format for dev deploy (`develop-latest` or `develop-<sha7>`)
+- GHCR tag existence for both deploy images
+- SSH connectivity
+- remote preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
+
+Secrets required for one real dev validation:
+1. `DEV_SSH_KEY` (private key content for target server)
+2. `DEV_USER` (SSH user)
+3. `DEV_HOST` (IP/FQDN)
+
+Server prerequisites required for one real dev validation:
+1. `/opt/petnose` exists with this repository deployed
+2. `/opt/petnose/infra/docker/.env` exists and is runtime-correct
+3. Docker engine + docker compose plugin are installed for the SSH user
+4. Server can pull target GHCR tags
+5. If GHCR packages are private: set `GHCR_USERNAME` and `GHCR_TOKEN` on server `.env`
+
 ---
 
 ## 환경별 관리 위치
@@ -125,7 +146,7 @@ infra/docker/.env.example  ← 커밋됨, 키 목록과 설명만 포함
 GitHub Actions Secrets 설정이 현재 필요하지 않습니다.
 ```
 
-### GitHub Actions CD (향후)
+### GitHub Actions CD
 
 GitHub 저장소 → Settings → Secrets and variables → Actions 에서 설정:
 
@@ -140,6 +161,7 @@ PROD_HOST        ← prod 서버 주소
 
 `cd-dev.yaml`은 자동(이미지 publish 성공 + develop) 또는 수동(`workflow_dispatch`)으로 실행할 수 있습니다.
 수동 실행 시 `image_tag` 입력값(예: `develop-latest`, `develop-a1b2c3d`)을 사용합니다.
+현재 workflow에는 GHCR 태그 존재 확인, SSH 연결 확인, 원격 preflight 검증이 포함되어 있습니다.
 
 ### 서버 런타임 (dev 서버 / prod 서버)
 
