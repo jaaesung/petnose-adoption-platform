@@ -1,0 +1,28 @@
+name: Runner Smoke
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: [self-hosted, Linux, X64, petnose-dev]
+
+    steps:
+      - name: Show runner info
+        run: |
+          whoami
+          hostname
+          pwd
+          ls -la /opt/petnose
+
+      - name: Check Docker
+        run: |
+          docker --version
+          docker compose version
+
+      - name: Check repo path
+        run: |
+          cd /opt/petnose
+          test -f infra/scripts/deploy.sh && echo OK_deploy_sh
+          test -f infra/docker/.env && echo OK_env
+          docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.prod.yaml config >/dev/null && echo OK_compose_config
