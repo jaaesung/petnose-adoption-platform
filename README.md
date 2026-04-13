@@ -1,5 +1,6 @@
 # PetNose Adoption Platform
 
+Dev branch deployment rehearsal marker
 강아지 비문(코 지문) 인식 기반 유기견 입양 플랫폼 — 졸업작품 monorepo.
 
 ---
@@ -16,13 +17,13 @@ Flutter 앱 → Spring Boot API → Python 임베딩 서비스 → Qdrant 벡터
 
 ## 시스템 구성 요소
 
-| 서비스 | 역할 | 포트 |
-|---|---|---|
-| `nginx` | 리버스 프록시 | 80 |
-| `spring-api` | 비즈니스 로직, 인증, DB 연동 | 8080 (내부) |
+| 서비스         | 역할                           | 포트        |
+| -------------- | ------------------------------ | ----------- |
+| `nginx`        | 리버스 프록시                  | 80          |
+| `spring-api`   | 비즈니스 로직, 인증, DB 연동   | 8080 (내부) |
 | `python-embed` | 비문 이미지 → 임베딩 벡터 변환 | 8000 (내부) |
-| `mysql` | 사용자/강아지/입양 데이터 저장 | 3306 (내부) |
-| `qdrant` | 벡터 유사도 검색 | 6333 (내부) |
+| `mysql`        | 사용자/강아지/입양 데이터 저장 | 3306 (내부) |
+| `qdrant`       | 벡터 유사도 검색               | 6333 (내부) |
 
 전체 구조는 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)를 참고하세요.
 
@@ -73,19 +74,19 @@ petnose-adoption-platform/
 
 ## 문서 위치
 
-| 문서 | 설명 |
-|---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 시스템 구조 및 서비스 책임 |
-| [docs/ENV_STRATEGY.md](docs/ENV_STRATEGY.md) | 환경변수 및 Secrets 전략 |
-| [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md) | 팀원 최초 실행 가이드 |
-| [docs/OPS_NOTES.md](docs/OPS_NOTES.md) | 운영 메모 |
-| [docs/DB_VECTOR_ROLE.md](docs/DB_VECTOR_ROLE.md) | MySQL / Qdrant 역할 분리 |
-| [docs/TABLE_DRAFT.md](docs/TABLE_DRAFT.md) | DB 테이블 초안 |
-| [docs/VECTOR_SCHEMA_DRAFT.md](docs/VECTOR_SCHEMA_DRAFT.md) | 벡터 컬렉션 스키마 초안 |
-| [docs/BACKUP_PLAN.md](docs/BACKUP_PLAN.md) | 백업/복구 절차 |
-| [docs/API_CONTRACTS/frontend-backend.md](docs/API_CONTRACTS/frontend-backend.md) | Flutter ↔ Spring API 계약 |
-| [docs/API_CONTRACTS/spring-python.md](docs/API_CONTRACTS/spring-python.md) | Spring ↔ Python 계약 |
-| [infra/aws/ec2-setup.md](infra/aws/ec2-setup.md) | EC2 배포 준비 |
+| 문서                                                                             | 설명                       |
+| -------------------------------------------------------------------------------- | -------------------------- |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                                     | 시스템 구조 및 서비스 책임 |
+| [docs/ENV_STRATEGY.md](docs/ENV_STRATEGY.md)                                     | 환경변수 및 Secrets 전략   |
+| [docs/TEAM_ONBOARDING.md](docs/TEAM_ONBOARDING.md)                               | 팀원 최초 실행 가이드      |
+| [docs/OPS_NOTES.md](docs/OPS_NOTES.md)                                           | 운영 메모                  |
+| [docs/DB_VECTOR_ROLE.md](docs/DB_VECTOR_ROLE.md)                                 | MySQL / Qdrant 역할 분리   |
+| [docs/TABLE_DRAFT.md](docs/TABLE_DRAFT.md)                                       | DB 테이블 초안             |
+| [docs/VECTOR_SCHEMA_DRAFT.md](docs/VECTOR_SCHEMA_DRAFT.md)                       | 벡터 컬렉션 스키마 초안    |
+| [docs/BACKUP_PLAN.md](docs/BACKUP_PLAN.md)                                       | 백업/복구 절차             |
+| [docs/API_CONTRACTS/frontend-backend.md](docs/API_CONTRACTS/frontend-backend.md) | Flutter ↔ Spring API 계약  |
+| [docs/API_CONTRACTS/spring-python.md](docs/API_CONTRACTS/spring-python.md)       | Spring ↔ Python 계약       |
+| [infra/aws/ec2-setup.md](infra/aws/ec2-setup.md)                                 | EC2 배포 준비              |
 
 ---
 
@@ -105,14 +106,15 @@ bash infra/scripts/dev-up.sh
 
 ## GitHub Actions CI / CD
 
-| 워크플로 | 트리거 | 역할 |
-|----------|--------|------|
-| `ci.yaml` | push(develop/main) + PR | backend-test, python-smoke, integration-smoke, docker-build |
-| `publish-images.yaml` | push(develop/main) | GHCR 이미지 빌드 및 publish |
-| `cd-dev.yaml` | `publish-images.yaml` 성공 + develop, 또는 수동 dispatch | dev 서버 배포 (GHCR pull path) |
-| `cd-prod.yaml` | workflow_dispatch(main 기준) | prod 서버 수동 배포 (GHCR pull path) |
+| 워크플로              | 트리거                                                   | 역할                                                        |
+| --------------------- | -------------------------------------------------------- | ----------------------------------------------------------- |
+| `ci.yaml`             | push(develop/main) + PR                                  | backend-test, python-smoke, integration-smoke, docker-build |
+| `publish-images.yaml` | push(develop/main)                                       | GHCR 이미지 빌드 및 publish                                 |
+| `cd-dev.yaml`         | `publish-images.yaml` 성공 + develop, 또는 수동 dispatch | dev 서버 배포 (GHCR pull path)                              |
+| `cd-prod.yaml`        | workflow_dispatch(main 기준)                             | prod 서버 수동 배포 (GHCR pull path)                        |
 
 `ci.yaml`의 `integration-smoke`는 Docker Compose(dev)를 실제로 띄워 아래를 검증합니다:
+
 - Spring 기동 + `GET /actuator/health`
 - Flyway 마이그레이션 적용(`flyway_schema_history` 확인)
 - Spring → Python 연결(`/api/dev/embed-ping`)
@@ -120,12 +122,14 @@ bash infra/scripts/dev-up.sh
 - Qdrant 컬렉션 초기화 경로(`GET /collections/dog_nose_embeddings`)
 
 `integration-smoke`가 아직 보장하지 않는 것:
+
 - Flutter ↔ backend E2E
 - 인증/인가/도메인 API 정합성
 - 실제 AI 모델 추론 품질
 - 실제 서버 배포 경로(CD/SSH/secrets)
 
 Dev CD one-run validation (recommended):
+
 1. Confirm `publish-images.yaml` pushed both images for the same develop tag.
 2. In GitHub Actions, run `cd-dev.yaml` with `workflow_dispatch` and set `image_tag` (`develop-latest` or `develop-<sha7>`).
 3. `cd-dev.yaml` now fail-fast checks:
@@ -137,12 +141,14 @@ Dev CD one-run validation (recommended):
 5. If it fails, use workflow logs + [docs/OPS_NOTES.md](docs/OPS_NOTES.md) dev CD checklist to resolve.
 
 Canonical deployment path:
+
 1. `publish-images.yaml` 로 GHCR 이미지 생성
 2. 서버에서 `infra/scripts/deploy.sh` 실행
 3. `deploy.sh`가 `docker compose pull` → `up -d --no-build` 실행
 4. post-deploy healthcheck(`http://localhost/actuator/health`, nginx 경유) 실패 시 즉시 실패 처리
 
 GHCR 이미지:
+
 - `ghcr.io/jaaesung/petnose-spring-api:<branch>-latest`
 - `ghcr.io/jaaesung/petnose-python-embed:<branch>-latest`
 
