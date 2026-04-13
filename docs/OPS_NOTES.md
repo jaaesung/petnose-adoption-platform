@@ -235,15 +235,17 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 - 수동: `workflow_dispatch` (원하는 `image_tag` 지정 가능)
 
 필수 선행 조건 (UNVERIFIED, 수동 설정 필요):
-1. GitHub Actions secrets 설정: `DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`
+1. GitHub self-hosted runner가 dev 서버에서 online/idle 상태이고 라벨이 `self-hosted`, `Linux`, `X64`, `petnose-dev`와 일치
 2. dev 서버에 `/opt/petnose` 배치 및 `infra/scripts/deploy.sh` 실행 가능 상태
 3. 서버 `.env`에 배포/DB 환경변수 설정 (`SPRING_API_IMAGE`, `PYTHON_EMBED_IMAGE` 포함)
 4. GHCR 패키지가 private이면 서버에서 pull 가능한 인증(`GHCR_USERNAME`, `GHCR_TOKEN`)
+5. (수동 검증) runner 서비스 계정이 Docker 명령 실행 가능한 권한 보유 (`docker compose` 실행 가능)
 
 실패 시 확인 우선순위:
-1. SSH 접속 실패 (키/호스트/방화벽)
-2. GHCR pull 실패 (권한/태그 오타)
-3. `deploy.sh`의 post-deploy healthcheck 실패 (`/actuator/health` via nginx)
+1. self-hosted runner 라벨 불일치 또는 offline
+2. `/opt/petnose` preflight 실패 (파일 누락, `.env` 누락, compose config 오류)
+3. GHCR pull 실패 (권한/태그 오타)
+4. `deploy.sh`의 post-deploy healthcheck 실패 (`/actuator/health` via nginx)
 
 ---
 

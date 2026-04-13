@@ -126,18 +126,17 @@ bash infra/scripts/dev-up.sh
 - Flutter ↔ backend E2E
 - 인증/인가/도메인 API 정합성
 - 실제 AI 모델 추론 품질
-- 실제 서버 배포 경로(CD/SSH/secrets)
+- 실제 서버 배포 경로(CD/self-hosted runner/서버 런타임)
 
 Dev CD one-run validation (recommended):
 
 1. Confirm `publish-images.yaml` pushed both images for the same develop tag.
 2. In GitHub Actions, run `cd-dev.yaml` with `workflow_dispatch` and set `image_tag` (`develop-latest` or `develop-<sha7>`).
-3. `cd-dev.yaml` now fail-fast checks:
-   - required secrets (`DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`)
-   - GHCR tag existence for both images
-   - SSH connectivity
-   - remote preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
-4. Deployment succeeds only when `infra/scripts/deploy.sh` completes and post-deploy healthcheck (`http://localhost/actuator/health`) passes.
+3. `cd-dev.yaml` should run on self-hosted labels (`self-hosted`, `Linux`, `X64`, `petnose-dev`) and execute local preflight in `/opt/petnose`:
+   - required files (`infra/scripts/deploy.sh`, `infra/docker/.env`, compose files)
+   - Docker/Compose availability and compose config validation
+   - deterministic image tag resolution (`workflow_dispatch` input or `workflow_run.head_sha`)
+4. Deployment succeeds only when local `infra/scripts/deploy.sh` completes and post-deploy healthcheck (`http://localhost/actuator/health`) passes.
 5. If it fails, use workflow logs + [docs/OPS_NOTES.md](docs/OPS_NOTES.md) dev CD checklist to resolve.
 
 Canonical deployment path:

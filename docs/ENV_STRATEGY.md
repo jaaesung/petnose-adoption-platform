@@ -82,16 +82,15 @@
 > **주의**: `infra/nginx/conf.d/default.conf`의 `client_max_body_size`는 현재 **하드코딩(20m)**되어 있습니다.  
 > `MAX_UPLOAD_SIZE_MB` 값을 변경할 경우 nginx conf도 함께 수정해야 합니다.
 
-### CD (배포 자동화) — 향후 설정 필요
+### CD (배포 자동화)
 
 | 변수 | 분류 | 설명 | 관리 위치 |
 |------|------|------|-----------|
-| `DEV_SSH_KEY` | **SECRET** | dev 서버 SSH 개인키 | GitHub Actions Secrets |
-| `DEV_USER` | COMMON | dev 서버 SSH 사용자명 | GitHub Actions Secrets |
-| `DEV_HOST` | COMMON | dev 서버 IP 또는 도메인 | GitHub Actions Secrets |
 | `PROD_SSH_KEY` | **SECRET** | prod 서버 SSH 개인키 | GitHub Actions Secrets |
 | `PROD_USER` | COMMON | prod 서버 SSH 사용자명 | GitHub Actions Secrets |
 | `PROD_HOST` | COMMON | prod 서버 IP 또는 도메인 | GitHub Actions Secrets |
+
+> dev CD(`cd-dev.yaml`)는 SSH secrets 대신 self-hosted runner(`self-hosted`, `Linux`, `X64`, `petnose-dev`)에서 서버 로컬 배포를 수행합니다.
 
 ### 배포 이미지 / GHCR 인증 (서버 런타임)
 
@@ -106,22 +105,17 @@
 
 ### Dev CD (current practical requirements)
 
-`cd-dev.yaml` currently enforces fail-fast checks before remote deploy:
-- required secrets exist: `DEV_SSH_KEY`, `DEV_USER`, `DEV_HOST`
+`cd-dev.yaml` currently enforces fail-fast checks before local deploy on dev runner:
 - `image_tag` format for dev deploy (`develop-latest` or `develop-<sha7>`)
-- GHCR tag existence for both deploy images
-- SSH connectivity
-- remote preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
+- local preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
 
-Secrets required for one real dev validation:
-1. `DEV_SSH_KEY` (private key content for target server)
-2. `DEV_USER` (SSH user)
-3. `DEV_HOST` (IP/FQDN)
+GitHub Secrets required for one real dev validation:
+1. 없음 (dev CD는 self-hosted runner 기반)
 
 Server prerequisites required for one real dev validation:
 1. `/opt/petnose` exists with this repository deployed
 2. `/opt/petnose/infra/docker/.env` exists and is runtime-correct
-3. Docker engine + docker compose plugin are installed for the SSH user
+3. Docker engine + docker compose plugin are installed for the runner service user
 4. Server can pull target GHCR tags
 5. If GHCR packages are private: set `GHCR_USERNAME` and `GHCR_TOKEN` on server `.env`
 
@@ -151,9 +145,6 @@ GitHub Actions Secrets 설정이 현재 필요하지 않습니다.
 GitHub 저장소 → Settings → Secrets and variables → Actions 에서 설정:
 
 ```
-DEV_SSH_KEY      ← dev 서버 SSH 개인키 (PEM 전체)
-DEV_USER         ← SSH 사용자명 (예: ubuntu, ec2-user)
-DEV_HOST         ← dev 서버 주소 (예: 1.2.3.4 또는 dev.example.com)
 PROD_SSH_KEY     ← prod 서버 SSH 개인키
 PROD_USER        ← SSH 사용자명
 PROD_HOST        ← prod 서버 주소
@@ -161,7 +152,7 @@ PROD_HOST        ← prod 서버 주소
 
 `cd-dev.yaml`은 자동(이미지 publish 성공 + develop) 또는 수동(`workflow_dispatch`)으로 실행할 수 있습니다.
 수동 실행 시 `image_tag` 입력값(예: `develop-latest`, `develop-a1b2c3d`)을 사용합니다.
-현재 workflow에는 GHCR 태그 존재 확인, SSH 연결 확인, 원격 preflight 검증이 포함되어 있습니다.
+`cd-dev.yaml`은 self-hosted runner에서 `/opt/petnose` 로컬 preflight 후 `infra/scripts/deploy.sh`를 실행합니다.
 
 ### 서버 런타임 (dev 서버 / prod 서버)
 
@@ -197,7 +188,7 @@ infra/docker/.env                ← .gitignore 확인 필수
 MYSQL_PASSWORD (실제 값)
 MYSQL_ROOT_PASSWORD (실제 값)
 SPRING_DATASOURCE_PASSWORD (실제 값)
-DEV_SSH_KEY / PROD_SSH_KEY (SSH 개인키)
+PROD_SSH_KEY (SSH 개인키)
 ```
 
 ---

@@ -1,178 +1,84 @@
-name: CD - Dev Deploy (GHCR Pull Path)
-
-# Canonical deploy path:
-#   1) publish-images.yaml pushes GHCR images
-#   2) this workflow SSHes to the dev server and runs deploy.sh (pull + up --no-build)
-#   3) deploy.sh fail-fast healthcheck decides success/failure
+name: CD - Dev Deploy (Self-Hosted)
 
 on:
-  workflow_run:
-    workflows: ["Publish Images to GHCR"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Deploy tag (develop-latest or develop-<sha7>)"
+        description: "Image tag to deploy (e.g. develop-latest or develop-<sha7>)"
         required: true
         default: "develop-latest"
-
-permissions:
-  contents: read
-  packages: read
-
-concurrency:
-  group: cd-dev
-  cancel-in-progress: true
+  workflow_run:
+    workflows: ["Publish Images to GHCR"]
+    types: [completed]
 
 jobs:
-  deploy-dev:
-    name: Dev Server Deploy
-    runs-on: ubuntu-latest
-    if: >-
-      ${{
-        (github.event_name == 'workflow_run' &&
-         github.event.workflow_run.conclusion == 'success' &&
-         github.event.workflow_run.head_branch == 'develop')
-        || github.event_name == 'workflow_dispatch'
-      }}
-    timeout-minutes: 20
-
+  dev-deploy:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'develop')
+    runs-on: [self-hosted, Linux, X64, petnose-dev]
+    env:
+      DEPLOY_ROOT: /opt/petnose
+      SPRING_IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/petnose-spring-api
+      PYTHON_IMAGE_REPO: ghcr.io/${{ github.repository_owner }}/petnose-python-embed
     steps:
-      - name: Validate required secrets
-        env:
-          DEV_SSH_KEY: ${{ secrets.DEV_SSH_KEY }}
-          DEV_USER: ${{ secrets.DEV_USER }}
-          DEV_HOST: ${{ secrets.DEV_HOST }}
+      - name: Resolve image tag
+        id: resolve
+        shell: bash
         run: |
           set -euo pipefail
-          test -n "${DEV_SSH_KEY}" || { echo "::error::Missing secret DEV_SSH_KEY"; exit 1; }
-          test -n "${DEV_USER}" || { echo "::error::Missing secret DEV_USER"; exit 1; }
-          test -n "${DEV_HOST}" || { echo "::error::Missing secret DEV_HOST"; exit 1; }
-
-      - name: Resolve deploy tag and image refs
-        id: resolve_tag
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_run" ]; then
-            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
-            TAG="develop-${HEAD_SHA:0:7}"
-            SOURCE="workflow_run"
-          else
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG="${{ github.event.inputs.image_tag }}"
-            SOURCE="workflow_dispatch"
+          else
+            SHA="${{ github.event.workflow_run.head_sha }}"
+            TAG="develop-${SHA:0:7}"
           fi
-
-          if ! echo "${TAG}" | grep -Eq '^[A-Za-z0-9._-]+$'; then
-            echo "::error::Invalid image tag format: ${TAG}"
+          if [[ ! "${TAG}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "[ERROR] Invalid image tag format: ${TAG}"
             exit 1
           fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: $TAG"
 
-          if ! echo "${TAG}" | grep -Eq '^develop-(latest|[0-9a-f]{7})$'; then
-            echo "::error::For dev deploy, image_tag must match develop-latest or develop-<sha7>."
-            exit 1
-          fi
-
-          OWNER="${{ github.repository_owner }}"
-          SPRING_IMAGE="ghcr.io/${OWNER}/petnose-spring-api:${TAG}"
-          PYTHON_IMAGE="ghcr.io/${OWNER}/petnose-python-embed:${TAG}"
-
-          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
-          echo "source=${SOURCE}" >> "${GITHUB_OUTPUT}"
-          echo "spring_image=${SPRING_IMAGE}" >> "${GITHUB_OUTPUT}"
-          echo "python_image=${PYTHON_IMAGE}" >> "${GITHUB_OUTPUT}"
-
-          echo "[INFO] deploy source=${SOURCE}, tag=${TAG}"
-          echo "[INFO] spring image=${SPRING_IMAGE}"
-          echo "[INFO] python image=${PYTHON_IMAGE}"
-
-      - name: GHCR login (read)
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Validate GHCR tags exist before SSH
+      - name: Preflight on dev server (local runner)
+        shell: bash
         run: |
           set -euo pipefail
-          SPRING_IMAGE="${{ steps.resolve_tag.outputs.spring_image }}"
-          PYTHON_IMAGE="${{ steps.resolve_tag.outputs.python_image }}"
+          cd "${DEPLOY_ROOT}"
+          test -f infra/scripts/deploy.sh
+          test -f infra/docker/.env
+          test -f infra/docker/compose.yaml
+          test -f infra/docker/compose.prod.yaml
+          grep -q '^SPRING_API_IMAGE=' infra/docker/.env
+          grep -q '^PYTHON_EMBED_IMAGE=' infra/docker/.env
+          docker --version
+          docker compose version
+          curl --version
+          docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.prod.yaml config >/dev/null
 
-          docker manifest inspect "${SPRING_IMAGE}" > /dev/null
-          docker manifest inspect "${PYTHON_IMAGE}" > /dev/null
-          echo "[INFO] Both GHCR images are resolvable."
-
-      - name: Prepare SSH
+      - name: Pin image tags in env
+        shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -T 10 -H "${{ secrets.DEV_HOST }}" >> ~/.ssh/known_hosts
-
-      - name: Check SSH connectivity
-        run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}" \
-            "echo '[INFO] SSH connectivity OK'"
-
-      - name: Remote preflight (server layout and runtime)
-        run: |
-          set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}" \
-            '
-              set -euo pipefail
-              test -d /opt/petnose || { echo "[ERROR] Missing /opt/petnose"; exit 1; }
-              cd /opt/petnose
-              test -f infra/scripts/deploy.sh || { echo "[ERROR] Missing infra/scripts/deploy.sh"; exit 1; }
-              test -f infra/docker/.env || { echo "[ERROR] Missing infra/docker/.env"; exit 1; }
-              command -v docker > /dev/null || { echo "[ERROR] docker command not found"; exit 1; }
-              docker compose version > /dev/null || { echo "[ERROR] docker compose plugin not available"; exit 1; }
-              docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.prod.yaml config > /dev/null
-              echo "[INFO] Remote preflight OK"
-            '
+          cd "${DEPLOY_ROOT}"
+          TAG="${{ steps.resolve.outputs.tag }}"
+          sed -i "s|^SPRING_API_IMAGE=.*|SPRING_API_IMAGE=${SPRING_IMAGE_REPO}:${TAG}|" infra/docker/.env
+          sed -i "s|^PYTHON_EMBED_IMAGE=.*|PYTHON_EMBED_IMAGE=${PYTHON_IMAGE_REPO}:${TAG}|" infra/docker/.env
 
       - name: Run deploy.sh on dev server
+        shell: bash
         run: |
           set -euo pipefail
-          SPRING_IMAGE="${{ steps.resolve_tag.outputs.spring_image }}"
-          PYTHON_IMAGE="${{ steps.resolve_tag.outputs.python_image }}"
-
-          ssh -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}" \
-            "set -euo pipefail; cd /opt/petnose && \
-             SPRING_API_IMAGE=${SPRING_IMAGE} \
-             PYTHON_EMBED_IMAGE=${PYTHON_IMAGE} \
-             bash infra/scripts/deploy.sh"
+          cd "${DEPLOY_ROOT}"
+          bash infra/scripts/deploy.sh
 
       - name: Post-deploy status snapshot
+        if: always()
+        shell: bash
         run: |
           set -euo pipefail
-          ssh -o StrictHostKeyChecking=yes \
-            -o BatchMode=yes \
-            -o ConnectTimeout=10 \
-            -i ~/.ssh/id_ed25519 \
-            "${{ secrets.DEV_USER }}@${{ secrets.DEV_HOST }}" \
-            "cd /opt/petnose && docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.prod.yaml ps"
-
-      - name: Failure guidance
-        if: failure()
-        run: |
-          echo "::error::Dev CD failed."
-          echo "Check 1) DEV_SSH_KEY/DEV_USER/DEV_HOST are set and valid."
-          echo "Check 2) GHCR tags exist for both images (publish-images.yaml for same tag)."
-          echo "Check 3) Server can SSH and has /opt/petnose with infra/docker/.env."
-          echo "Check 4) Server has Docker + docker compose plugin."
-          echo "Check 5) If GHCR packages are private, set GHCR_USERNAME/GHCR_TOKEN in server .env."
-          echo "Check 6) Inspect deploy.sh logs for healthcheck fail-fast details."
+          cd "${DEPLOY_ROOT}"
+          docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.prod.yaml ps
+          curl -fsS http://localhost/actuator/health || true
