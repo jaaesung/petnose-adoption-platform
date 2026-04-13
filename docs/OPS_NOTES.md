@@ -138,6 +138,24 @@ docker compose --env-file infra/docker/.env \
 
 ---
 
+## 백업/복구 드릴 메모 (dev)
+
+- 백업 실행: `bash infra/scripts/backup.sh`
+- MySQL 산출물: `backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz`
+- uploads 산출물: `backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz`
+- uploads 복구는 두 모드가 있습니다.
+- 기본 모드: 기존 파일 유지 + 동일 경로 파일 덮어쓰기
+- 스냅샷 재현 모드: `--wipe-first` 옵션으로 기존 파일 삭제 후 복구
+
+```bash
+bash infra/scripts/restore.sh mysql backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz
+bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz --wipe-first
+```
+
+상세 실검증 절차는 [docs/BACKUP_PLAN.md](BACKUP_PLAN.md)의 `로컬/dev Drill (1회 실검증)` 섹션을 따릅니다.
+
+---
+
 ## Python embed mock 모드
 
 `.env`에 `EMBED_MODEL=mock-v1`이 설정되어 있으면 실제 모델 없이도 동작합니다.  

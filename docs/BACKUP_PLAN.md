@@ -7,11 +7,11 @@
 ### Dev
 
 - 주기: 필요 시 수동 실행
-- 방법: `infra/scripts/backup.sh` 실행
-- 저장 위치: 로컬 `backups/mysql/` 디렉토리
+- 방법: `bash infra/scripts/backup.sh`
+- 산출물 경로: `backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz`
 
-> 스크립트는 `docker compose --env-file infra/docker/.env -f compose.yaml -f compose.dev.yaml exec` 경로를 사용합니다.  
-> Compose 프로젝트명은 `name: petnose`로 고정되어 볼륨/컨테이너 prefix가 일관됩니다.
+> 스크립트는 아래 compose 타깃을 고정 사용합니다.  
+> `docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml ...`
 
 ### Prod
 
@@ -21,20 +21,21 @@
 - 보존 기간: 최근 7일분
 
 ```bash
-# 기본 dump 명령 예시
-mysqldump -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
-  | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+mysqldump -h 127.0.0.1 -u "$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" \
+  | gzip > "backup_$(date +%Y%m%d_%H%M%S).sql.gz"
 ```
 
 ---
 
 ## 업로드 파일 백업 (이미지)
 
-`uploads/` 볼륨에 저장된 비문 이미지 및 프로필 이미지를 백업합니다.
+`uploads_data` 볼륨(컨테이너 내부 `${UPLOAD_BASE_PATH:-/var/uploads}`)의 파일을 백업합니다.
 
 ### Dev
 
-- 필요 시 수동 복사
+- 주기: 필요 시 수동 실행
+- 방법: `bash infra/scripts/backup.sh` (MySQL + uploads 동시 생성)
+- 산출물 경로: `backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz`
 
 ### Prod
 
@@ -43,9 +44,114 @@ mysqldump -h 127.0.0.1 -u $MYSQL_USER -p$MYSQL_PASSWORD $MYSQL_DATABASE \
 - S3 sync를 고려할 수 있음 (aws cli 필요)
 
 ```bash
-# 예시
-tar -czf uploads_$(date +%Y%m%d).tar.gz /var/uploads
+tar -czf "uploads_$(date +%Y%m%d_%H%M%S).tar.gz" /var/uploads
 ```
+
+---
+
+## 복구 절차 개요
+
+1. MySQL 복구
+```bash
+bash infra/scripts/restore.sh mysql backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz
+```
+
+2. 업로드 파일 복구
+```bash
+# 기본: 기존 파일 유지 + 동일 경로 파일만 덮어쓰기
+bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz
+
+# 드릴 권장: 기존 파일 먼저 비우고 복구(스냅샷에 더 가깝게 재현)
+bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz --wipe-first
+```
+
+---
+
+## 로컬/dev Drill (1회 실검증)
+
+아래 절차는 "백업 파일 생성 + 실제 복구 가능"을 1회 검증하는 최소 시나리오입니다.
+
+### 0) 사전 조건
+
+```bash
+bash infra/scripts/dev-up.sh
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml ps
+```
+
+`mysql`, `spring-api`가 `running` 상태여야 합니다.
+
+### 1) 샘플 데이터 생성 (DB + uploads)
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T mysql \
+  sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "
+    CREATE TABLE IF NOT EXISTS backup_restore_drill (
+      id INT PRIMARY KEY AUTO_INCREMENT,
+      token VARCHAR(128) NOT NULL,
+      note VARCHAR(255) NOT NULL
+    );
+    DELETE FROM backup_restore_drill WHERE token='\''drill_local_validation'\'';
+    INSERT INTO backup_restore_drill (token, note) VALUES ('\''drill_local_validation'\'', '\''before_backup'\'');
+  "'
+
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T spring-api \
+  sh -lc 'mkdir -p "$UPLOAD_BASE_PATH/drill" && printf "%s\n" "before_backup" > "$UPLOAD_BASE_PATH/drill/drill_local_validation.txt"'
+```
+
+### 2) 백업 실행
+
+```bash
+bash infra/scripts/backup.sh
+```
+
+### 3) 산출물 경로 확인
+
+```bash
+ls -1t backups/mysql/backup_*.sql.gz | head -n 1
+ls -1t backups/uploads/uploads_*.tar.gz | head -n 1
+```
+
+정상 패턴:
+- `backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz`
+- `backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz`
+
+### 4) 백업 후 데이터 변조 (복구 검증용)
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T mysql \
+  sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -e "
+    UPDATE backup_restore_drill
+    SET note='\''after_backup_mutation'\''
+    WHERE token='\''drill_local_validation'\'';
+  "'
+
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T spring-api \
+  sh -lc 'printf "%s\n" "after_backup_mutation" > "$UPLOAD_BASE_PATH/drill/drill_local_validation.txt"'
+```
+
+### 5) 복구 실행
+
+```bash
+MYSQL_BACKUP="$(ls -1t backups/mysql/backup_*.sql.gz | head -n 1)"
+UPLOADS_BACKUP="$(ls -1t backups/uploads/uploads_*.tar.gz | head -n 1)"
+
+bash infra/scripts/restore.sh mysql "$MYSQL_BACKUP"
+bash infra/scripts/restore.sh uploads "$UPLOADS_BACKUP" --wipe-first
+```
+
+### 6) 복구 상태 검증
+
+```bash
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T mysql \
+  sh -lc 'mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE" -Nse "
+    SELECT note FROM backup_restore_drill WHERE token='\''drill_local_validation'\'';
+  "'
+
+docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infra/docker/compose.dev.yaml exec -T spring-api \
+  sh -lc 'cat "$UPLOAD_BASE_PATH/drill/drill_local_validation.txt"'
+```
+
+둘 다 `before_backup`이면 드릴 통과입니다.
 
 ---
 
@@ -67,31 +173,9 @@ POST http://localhost:6333/collections/dog_nose_embeddings/snapshots
 
 ---
 
-## 복구 절차 개요
-
-1. **MySQL 복구**
-   ```bash
-   bash infra/scripts/restore.sh mysql backups/mysql/backup_YYYYMMDD.sql.gz
-   ```
-
-2. **업로드 파일 복구**
-   ```bash
-   bash infra/scripts/restore.sh uploads backups/uploads_YYYYMMDD.tar.gz
-   ```
-
-3. **Qdrant 복구** (스냅샷 있을 경우)
-   - Qdrant API로 스냅샷 복구
-
-4. **Qdrant 재구성** (스냅샷 없을 경우)
-   - MySQL `dogs` 테이블에서 `qdrant_point_id IS NULL` 또는 전체 레코드를 대상으로
-   - Spring Boot 배치 엔드포인트 또는 스크립트로 임베딩 재생성
-
----
-
 ## 주의사항
 
-- 백업 파일에 DB 패스워드 등 민감 정보가 포함될 수 있으므로 저장소에 커밋하지 않습니다.
-- 복구 테스트를 주기적으로 수행하여 실제 복구 가능 여부를 확인합니다.
-- prod 환경에서는 백업 스크립트 실행 결과를 로그로 남깁니다.
-- `backup.sh`/`restore.sh`는 업로드 파일 처리 시 `spring-api` 컨테이너의 `${UPLOAD_BASE_PATH}` 마운트를 사용합니다.
-- 따라서 복구/백업 실행 전 dev 스택(`spring-api`, `mysql`)이 실행 중이어야 합니다.
+- 백업 파일에 민감 정보가 포함될 수 있으므로 저장소에 커밋하지 않습니다.
+- `backup.sh`/`restore.sh`는 `spring-api`, `mysql` 서비스가 실행 중이어야 동작합니다.
+- uploads 복구 기본 모드는 "덮어쓰기"이며, 스냅샷과 동일 상태 재현이 필요하면 `--wipe-first`를 사용하세요.
+- Qdrant 스냅샷 복구는 본 문서 범위 밖(선택)이며, 기본 drill은 MySQL + uploads만 검증합니다.

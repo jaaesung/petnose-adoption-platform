@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # 복구 스크립트
-# 사용: bash restore.sh <mysql|uploads> <백업파일경로>
+# 사용:
+#   bash restore.sh mysql <백업파일경로.sql.gz>
+#   bash restore.sh uploads <백업파일경로.tar.gz> [--wipe-first]
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,10 +50,16 @@ UPLOAD_BASE_PATH_VALUE="${UPLOAD_BASE_PATH_VALUE:-/var/uploads}"
 
 TARGET="${1:-}"
 BACKUP_FILE="${2:-}"
+UPLOADS_OPTION="${3:-}"
+
+usage() {
+  echo "사용법:"
+  echo "  bash infra/scripts/restore.sh mysql backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.gz"
+  echo "  bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz [--wipe-first]"
+}
 
 if [ -z "${TARGET}" ] || [ -z "${BACKUP_FILE}" ]; then
-  echo "사용법: bash restore.sh <mysql|uploads> <백업파일경로>"
-  echo "  예) bash restore.sh mysql backups/mysql/backup_20260412.sql.gz"
+  usage
   exit 1
 fi
 
@@ -62,9 +70,19 @@ fi
 
 case "${TARGET}" in
   mysql)
+    if [ -n "${UPLOADS_OPTION}" ]; then
+      echo "[ERROR] mysql 복구는 세 번째 인자를 받지 않습니다."
+      usage
+      exit 1
+    fi
+
     if [ -z "${MYSQL_USER_VALUE}" ] || [ -z "${MYSQL_PASSWORD_VALUE}" ] || [ -z "${MYSQL_DATABASE_VALUE}" ]; then
       echo "[ERROR] MYSQL_USER / MYSQL_PASSWORD / MYSQL_DATABASE 값이 .env에 필요합니다."
       exit 1
+    fi
+
+    if [[ "${BACKUP_FILE}" != *.sql.gz ]]; then
+      echo "[WARN] mysql 백업 파일은 일반적으로 .sql.gz 확장자를 사용합니다: ${BACKUP_FILE}"
     fi
 
     require_running_service "mysql"
@@ -78,14 +96,43 @@ case "${TARGET}" in
     ;;
 
   uploads)
+    WIPE_FIRST="false"
+    case "${UPLOADS_OPTION}" in
+      "")
+        ;;
+      --wipe-first)
+        WIPE_FIRST="true"
+        ;;
+      *)
+        echo "[ERROR] 알 수 없는 uploads 옵션: ${UPLOADS_OPTION}"
+        usage
+        exit 1
+        ;;
+    esac
+
+    if [[ "${BACKUP_FILE}" != *.tar.gz ]]; then
+      echo "[WARN] uploads 백업 파일은 일반적으로 .tar.gz 확장자를 사용합니다: ${BACKUP_FILE}"
+    fi
+
     require_running_service "spring-api"
 
     echo "[INFO] 업로드 파일 복구 시작: ${BACKUP_FILE}"
-    echo "[WARN] ${UPLOAD_BASE_PATH_VALUE} 경로 기존 파일이 덮어써질 수 있습니다. 계속하려면 Enter를 누르세요."
+    if [ "${WIPE_FIRST}" = "true" ]; then
+      echo "[WARN] --wipe-first 사용: ${UPLOAD_BASE_PATH_VALUE} 경로 기존 파일을 먼저 삭제한 뒤 복구합니다."
+    else
+      echo "[WARN] 기본 모드: 기존 파일은 유지되고, 동일 경로 파일만 덮어써집니다."
+    fi
+    echo "[WARN] 계속하려면 Enter를 누르세요."
     read -r
+
+    if [ "${WIPE_FIRST}" = "true" ]; then
+      compose_dev exec -T spring-api \
+        sh -lc "mkdir -p '${UPLOAD_BASE_PATH_VALUE}' && find '${UPLOAD_BASE_PATH_VALUE}' -mindepth 1 -delete"
+    fi
+
     cat "${BACKUP_FILE}" | compose_dev exec -T spring-api \
       sh -lc "mkdir -p '${UPLOAD_BASE_PATH_VALUE}' && tar -xzf - -C '${UPLOAD_BASE_PATH_VALUE}'"
-    echo "[OK]   업로드 파일 복구 완료."
+    echo "[OK]   업로드 파일 복구 완료. (wipe-first=${WIPE_FIRST})"
     ;;
 
   *)
