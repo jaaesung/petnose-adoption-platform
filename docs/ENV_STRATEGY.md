@@ -13,6 +13,14 @@
 
 ---
 
+## 환경 의미 구분
+
+- `local dev`: 개인 PC 개발 (`infra/docker/.env` + `compose.dev`)
+- `shared dev`: 공용 dev 서버 검증 (`cd-dev.yaml`, self-hosted runner)
+- `prod`: 수동 승인 기반 배포 (`cd-prod.yaml`)
+
+---
+
 ## 환경변수 분류 기준
 
 | 분류 | 설명 | 관리 위치 |
@@ -106,8 +114,11 @@
 ### Dev CD (current practical requirements)
 
 `cd-dev.yaml` currently enforces fail-fast checks before local deploy on dev runner:
-- `image_tag` format for dev deploy (`develop-latest` or `develop-<sha7>`)
+- strict `image_tag` format for dev deploy (`develop-latest` or `develop-<sha7>`)
+- GHCR manifest existence check for both images before deploy
+- server deploy file hash match check (`infra/scripts/deploy.sh`, `infra/docker/compose.yaml`, `infra/docker/compose.prod.yaml`)
 - local preflight (`/opt/petnose`, `.env`, Docker/Compose, compose config)
+- one-run env override for image tags (no persistent rewrite of server `.env` image keys)
 
 GitHub Secrets required for one real dev validation:
 1. 없음 (dev CD는 self-hosted runner 기반)
@@ -153,6 +164,7 @@ PROD_HOST        ← prod 서버 주소
 `cd-dev.yaml`은 자동(이미지 publish 성공 + develop) 또는 수동(`workflow_dispatch`)으로 실행할 수 있습니다.
 수동 실행 시 `image_tag` 입력값(예: `develop-latest`, `develop-a1b2c3d`)을 사용합니다.
 `cd-dev.yaml`은 self-hosted runner에서 `/opt/petnose` 로컬 preflight 후 `infra/scripts/deploy.sh`를 실행합니다.
+배포 이미지 태그는 해당 run에서만 env override(`SPRING_API_IMAGE`, `PYTHON_EMBED_IMAGE`)로 주입합니다.
 
 ### 서버 런타임 (dev 서버 / prod 서버)
 

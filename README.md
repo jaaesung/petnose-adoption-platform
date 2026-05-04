@@ -10,6 +10,12 @@ Dev branch deployment rehearsal marker
 강아지 코 사진을 찍으면 비문 임베딩을 통해 동일 개체를 식별하고, 유기견과 보호자를 연결하는 입양 플랫폼입니다.  
 Flutter 앱 → Spring Boot API → Python 임베딩 서비스 → Qdrant 벡터 검색의 파이프라인으로 동작합니다.
 
+## 환경 의미 구분
+
+- `local dev`: 개인 PC에서 `compose.dev`로 기능 개발/디버깅
+- `shared dev`: 팀 공용 dev 서버 배포 검증 (`develop` 기준, self-hosted runner)
+- `prod`: 발표/시연용 수동 배포 경로 (`workflow_dispatch`, 보수적 운영)
+
 ## 목표
 
 - 비문 기반 개체 식별로 유기견 재회율 향상
@@ -84,6 +90,7 @@ petnose-adoption-platform/
 | [docs/TABLE_DRAFT.md](docs/TABLE_DRAFT.md)                                       | DB 테이블 초안             |
 | [docs/VECTOR_SCHEMA_DRAFT.md](docs/VECTOR_SCHEMA_DRAFT.md)                       | 벡터 컬렉션 스키마 초안    |
 | [docs/BACKUP_PLAN.md](docs/BACKUP_PLAN.md)                                       | 백업/복구 절차             |
+| [docs/ops-evidence/backup-restore-drill-log.md](docs/ops-evidence/backup-restore-drill-log.md) | 백업/복구 드릴 증적 로그 |
 | [docs/API_CONTRACTS/frontend-backend.md](docs/API_CONTRACTS/frontend-backend.md) | Flutter ↔ Spring API 계약  |
 | [docs/API_CONTRACTS/spring-python.md](docs/API_CONTRACTS/spring-python.md)       | Spring ↔ Python 계약       |
 | [infra/aws/ec2-setup.md](infra/aws/ec2-setup.md)                                 | EC2 배포 준비              |
@@ -113,6 +120,16 @@ bash infra/scripts/dev-up.sh
 | `cd-dev.yaml`         | `publish-images.yaml` 성공 + develop, 또는 수동 dispatch | dev 서버 배포 (GHCR pull path)                              |
 | `cd-prod.yaml`        | workflow_dispatch(main 기준)                             | prod 서버 수동 배포 (GHCR pull path)                        |
 
+Shared dev deploy chain (deterministic target):
+
+1. `develop` push
+2. `publish-images.yaml` 성공
+3. `cd-dev.yaml` 실행 (`workflow_run` 또는 수동 dispatch)
+4. `cd-dev` guardrails 통과
+   - tag format + GHCR manifest 존재 확인
+   - `/opt/petnose` 핵심 배포 파일 해시 정합성 확인
+5. `deploy.sh` 실행 (`pull` → `up --no-build` → healthcheck)
+
 `ci.yaml`의 `integration-smoke`는 Docker Compose(dev)를 실제로 띄워 아래를 검증합니다:
 
 - Spring 기동 + `GET /actuator/health`
@@ -136,8 +153,11 @@ Dev CD one-run validation (recommended):
    - required files (`infra/scripts/deploy.sh`, `infra/docker/.env`, compose files)
    - Docker/Compose availability and compose config validation
    - deterministic image tag resolution (`workflow_dispatch` input or `workflow_run.head_sha`)
-4. Deployment succeeds only when local `infra/scripts/deploy.sh` completes and post-deploy healthcheck (`http://localhost/actuator/health`) passes.
-5. If it fails, use workflow logs + [docs/OPS_NOTES.md](docs/OPS_NOTES.md) dev CD checklist to resolve.
+   - strict tag guardrail (`develop-latest` or `develop-<sha7>`) + GHCR manifest existence check
+   - server deploy file hash match check against workflow repository files
+4. Deployment uses one-run env override (`SPRING_API_IMAGE`, `PYTHON_EMBED_IMAGE`) and does not rewrite server `.env` image keys.
+5. Deployment succeeds only when local `infra/scripts/deploy.sh` completes and post-deploy healthcheck (`http://localhost/actuator/health`) passes.
+6. If it fails, use workflow logs + [docs/OPS_NOTES.md](docs/OPS_NOTES.md) dev CD checklist to resolve.
 
 Canonical deployment path:
 
@@ -170,5 +190,5 @@ GHCR 이미지:
 GitHub 저장소 Settings → Branches → Add rule (`main`) 에서 아래를 권장한다:
 
 - `main` 직접 push 금지 (require PR)
-- PR merge 전 CI 통과 필수 (`Status checks: CI`)
+- PR merge 전 CI 통과 필수 (`Spring Boot 테스트`, `Python smoke`, `Integration smoke`, `Docker 이미지 빌드`)
 - 최소 1인 리뷰 승인 필요

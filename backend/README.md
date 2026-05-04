@@ -105,6 +105,12 @@ gradle test --no-daemon --stacktrace
 
 ---
 
+## 팀 최소 운영 규칙
+
+- `/api/dev/*`는 개발 진단용이며 제품 기능 계약에 포함하지 않습니다.
+- DB source of truth는 MySQL입니다. Qdrant는 검색 보조 데이터로 취급합니다.
+- API/DB 스키마 변경 시 `docs/API_CONTRACTS/*`, `docs/TABLE_DRAFT.md` 동기화 후 PR 생성합니다.
+
 ## 파일 저장 경로
 
 업로드된 이미지는 `${UPLOAD_BASE_PATH}` 아래에 다음 구조로 저장됩니다:

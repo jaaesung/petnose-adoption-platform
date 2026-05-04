@@ -2,6 +2,12 @@
 
 이 저장소를 처음 받은 팀원을 위한 최초 실행 가이드입니다.
 
+## 환경 의미 (먼저 확인)
+
+- `local dev`: 내 PC에서 기능 구현/디버깅
+- `shared dev`: 팀 공용 dev 서버 배포 검증 (self-hosted runner)
+- `prod`: 발표/시연용 수동 배포 (자동 배포 아님)
+
 ---
 
 ## 사전 조건
@@ -47,9 +53,9 @@ Copy-Item infra\docker\.env.example infra\docker\.env
 | 항목 | 기본값 | 수정 필요한 경우 |
 |------|--------|-----------------|
 | `MYSQL_PORT` | `3306` | 로컬에 MySQL이 이미 실행 중이면 `3307`로 변경 |
-| `MYSQL_PASSWORD` | placeholder | 팀 개발용 비밀번호로 변경 (`SPRING_DATASOURCE_PASSWORD`와 동일값 유지) |
-| `MYSQL_ROOT_PASSWORD` | placeholder | 팀 개발용 비밀번호로 변경 |
-| `SPRING_DATASOURCE_PASSWORD` | placeholder | `MYSQL_PASSWORD`와 반드시 동일하게 유지 |
+| `MYSQL_PASSWORD` | `change_me_dev_password` | 팀 개발용 비밀번호로 변경 (`SPRING_DATASOURCE_PASSWORD`와 동일값 유지) |
+| `MYSQL_ROOT_PASSWORD` | `change_me_root_password` | 팀 개발용 비밀번호로 변경 |
+| `SPRING_DATASOURCE_PASSWORD` | `change_me_dev_password` | `MYSQL_PASSWORD`와 반드시 동일하게 유지 |
 
 > **절대 `.env` 파일을 git commit하지 마세요.** `.gitignore`로 이미 제외되어 있습니다.  
 > env/secrets 전략 전체 설명: [docs/ENV_STRATEGY.md](ENV_STRATEGY.md)
@@ -138,6 +144,9 @@ docker compose \
 
 ## 자주 막히는 문제
 
+> 공용 dev 배포 실패 1차 진단은 [docs/OPS_NOTES.md](OPS_NOTES.md)의  
+> `실패 모드별 1차 진단 루틴` 섹션을 우선 확인하세요.
+
 ### Java 버전 불일치 (`invalid source release: 21`)
 
 ```
@@ -224,3 +233,18 @@ docker compose ... up -d --build --no-cache
 - [ ] `.env.example`에 새로 추가한 환경변수가 반영되었는가
 - [ ] 브랜치명이 규칙에 맞는가 (`feature/`, `fix/`, `infra/`, `docs/`)
 - [ ] PR 제목과 설명이 `.github/pull_request_template.md` 형식을 따르는가
+
+---
+
+## 팀별 최소 규칙 (handoff)
+
+- backend 팀
+  - `@Profile("dev")` 엔드포인트를 제품 API로 사용하지 않습니다.
+  - DB 기준값은 MySQL이며, 벡터 검색 결과는 Qdrant를 보조로 사용합니다.
+  - 변경 후 최소 `gradle test --no-daemon --stacktrace` 실행.
+- python 팀
+  - 기본 `EMBED_MODEL=mock-v1` 계약을 깨지 않습니다.
+  - 차원(`128`)과 응답 스키마 변경 시 backend 계약 문서를 먼저 갱신합니다.
+- flutter 팀
+  - 앱 코드는 아직 스캐폴드 단계입니다(README 초안 상태).
+  - API base URL 하드코딩 금지, 환경별 분리만 먼저 적용합니다.

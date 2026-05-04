@@ -2,6 +2,14 @@
 
 ---
 
+## 환경 구분
+
+- `local dev`: 개인 PC 개발/디버깅 (`compose.dev`)
+- `shared dev`: 팀 공용 서버 검증 (`cd-dev.yaml`)
+- `prod`: 발표/시연용 수동 배포 (`cd-prod.yaml`)
+
+---
+
 ## 로컬 실행
 
 > **사전 조건:** Docker Desktop, Docker Compose v2  
@@ -153,6 +161,7 @@ bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.
 ```
 
 상세 실검증 절차는 [docs/BACKUP_PLAN.md](BACKUP_PLAN.md)의 `로컬/dev Drill (1회 실검증)` 섹션을 따릅니다.
+드릴 결과 기록 템플릿: [docs/ops-evidence/backup-restore-drill-log.md](ops-evidence/backup-restore-drill-log.md)
 
 ---
 
@@ -233,6 +242,9 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 `cd-dev.yaml`은 두 방식으로 실행됩니다.
 - 자동: `publish-images.yaml` 성공 + `develop` 브랜치
 - 수동: `workflow_dispatch` (원하는 `image_tag` 지정 가능)
+- 태그 형식: `develop-latest` 또는 `develop-<sha7>`만 허용
+- 배포 시 서버 `.env` image 키를 직접 수정하지 않고, 해당 run에서만 env override로 `deploy.sh`를 실행
+- 배포 전 `/opt/petnose`의 핵심 파일(`deploy.sh`, `compose.yaml`, `compose.prod.yaml`) 해시를 워크플로우 체크아웃본과 비교해 drift를 차단
 
 필수 선행 조건 (UNVERIFIED, 수동 설정 필요):
 1. GitHub self-hosted runner가 dev 서버에서 online/idle 상태이고 라벨이 `self-hosted`, `Linux`, `X64`, `petnose-dev`와 일치
@@ -249,12 +261,37 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 
 ---
 
+## Shared Dev 배포 흐름
+
+1. `develop` push
+2. `publish-images.yaml`이 GHCR 이미지 publish
+3. `cd-dev.yaml` 실행 (자동: workflow_run / 수동: workflow_dispatch)
+4. `cd-dev` guardrail 확인
+   - tag 형식 검증 (`develop-latest` 또는 `develop-<sha7>`)
+   - GHCR manifest 존재 확인 (spring/python)
+   - 서버 배포 파일 해시 정합성 확인 (`/opt/petnose` vs workflow checkout)
+5. `deploy.sh` 실행 (`pull` → `up --no-build` → `actuator/health`)
+
+---
+
+## 실패 모드별 1차 진단 루틴
+
+| 실패 모드 | 1차 확인 명령 | 통과 기준 |
+|---|---|---|
+| runner 미수신/대기 | GitHub Actions run 상태 확인 | self-hosted `petnose-dev` 라벨 잡 수신 |
+| tag 검증 실패 | workflow 로그의 `Resolve image tag` 확인 | `develop-latest` 또는 `develop-<sha7>` |
+| GHCR 태그 없음 | workflow 로그의 `Verify image tag exists in GHCR` 확인 | spring/python 모두 manifest 조회 성공 |
+| 서버 파일 drift | workflow 로그의 `Verify server deploy files match repository` 확인 | `deploy.sh`, `compose.yaml`, `compose.prod.yaml` 해시 일치 |
+| deploy 후 health 실패 | `docker compose ... ps` / `docker compose ... logs --tail=200 spring-api nginx python-embed` | `http://localhost/actuator/health` 성공 |
+
+---
+
 ## GitHub Branch Protection 권장
 
 Settings → Branches → Add rule (대상: `main`):
 
 - `main` 직접 push 금지 — PR을 통해서만 merge
-- Status check 필수: `CI / Spring Boot 테스트` + `CI / Python smoke 테스트` + `CI / Docker 이미지 빌드 확인`
+- Status check 필수: `CI / Spring Boot 테스트` + `CI / Python smoke 테스트` + `CI / Integration smoke (Compose)` + `CI / Docker 이미지 빌드 확인`
 - 최소 1인 리뷰 승인 후 merge
 
 > 현재는 설정되어 있지 않으므로 저장소 관리자가 GitHub UI에서 직접 설정해야 합니다.

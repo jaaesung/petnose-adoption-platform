@@ -153,6 +153,22 @@ docker compose --env-file infra/docker/.env -f infra/docker/compose.yaml -f infr
 
 둘 다 `before_backup`이면 드릴 통과입니다.
 
+드릴 PASS 기준(최소):
+1. MySQL 검증 쿼리 결과가 `before_backup`
+2. uploads 검증 파일 내용이 `before_backup`
+3. `http://localhost/actuator/health` 응답 성공
+4. 결과가 `docs/ops-evidence/backup-restore-drill-log.md`에 기록됨
+
+### 7) 드릴 결과 기록 (proof)
+
+- 드릴 결과는 `docs/ops-evidence/backup-restore-drill-log.md`에 누적 기록합니다.
+- 최소 기록 항목:
+  - 실행 시각 / 실행자 / 대상 환경(dev/prod)
+  - 사용한 백업 파일 경로(MySQL, uploads)
+  - 복구 전 변조값과 복구 후 검증값(DB query 결과, 파일 내용/해시)
+  - 복구 후 health check 결과(`http://localhost/actuator/health`)
+  - 최종 판정(PASS/FAIL) 및 실패 시 원인
+
 ---
 
 ## Qdrant 백업
