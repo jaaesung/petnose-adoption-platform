@@ -1,71 +1,97 @@
-# MySQL vs Qdrant 역할 분리
+# DB / Vector Role (MVP Baseline)
 
-## 원칙 요약
+## 1. 역할 분리 원칙
 
-| 항목 | MySQL | Qdrant |
+| 구분 | MySQL | Qdrant |
 |---|---|---|
-| 역할 | 관계형 데이터 Source of Truth | 벡터 검색 인덱스 |
-| 저장 대상 | 모든 도메인 데이터 | 비문 임베딩 벡터 + 최소 payload |
-| 조회 방식 | SQL (JPA/MyBatis) | 벡터 유사도 검색 (cosine, L2) |
-| 복구 기준 | MySQL dump → Qdrant 재생성 가능 | MySQL로부터 재구성 가능 |
+| 역할 | Source of Truth | 벡터 검색 인덱스 |
+| 저장 데이터 | 도메인 정합 데이터(계정/강아지/게시글/신고/인증이력) | 임베딩 벡터 + 최소 payload |
+| 복구 기준 | 기준 데이터 원본 | MySQL 기준으로 재구성 가능 |
 
-**Source of Truth는 MySQL입니다.**  
-Qdrant 데이터가 유실되면 MySQL 데이터를 기반으로 재임베딩 → 재적재할 수 있어야 합니다.
+핵심 원칙:
+- MySQL이 정본이다.
+- Qdrant 유실 시 MySQL 기준으로 재임베딩/재적재한다.
+- Qdrant는 검색 성능 계층이며 정본이 아니다.
 
----
+## 2. MySQL 테이블 범위 (MVP)
 
-## MySQL 저장 대상
+이번 MVP baseline에서 관리하는 테이블은 정확히 아래 8개다.
 
-- 사용자 계정, 프로필, 인증 로그
-- 강아지 개체 정보 (품종, 이름, 상태 등)
-- 비문 이미지 경로 (파일은 `uploads/` 볼륨에 저장)
-- 입양 게시글, 신고, 매칭 이력
-- Qdrant 포인트 ID와 `dog_id` 매핑 (연관관계 추적용)
+1. `users`
+2. `refresh_tokens`
+3. `shelter_profiles`
+4. `dogs`
+5. `dog_images`
+6. `verification_logs`
+7. `adoption_posts`
+8. `reports`
 
-## Qdrant 저장 대상
+## 3. Qdrant 컬렉션 계약
 
-- 비문 임베딩 벡터
-- payload (검색 결과에서 바로 쓸 최소 정보만)
+- collection: `dog_nose_embeddings`
+- vector size: `128` (`mock-v1`)
+- distance: `Cosine`
+- point id: `dogs.id`와 동일 UUID 문자열
 
-### payload 후보
+Spring 설정 기본값:
+- `qdrant.collection=dog_nose_embeddings`
+- `qdrant.vector-dimension=128`
+- `qdrant.distance=Cosine`
+
+## 4. 이미지 저장 원칙
+
+- 이미지 원본 파일은 MySQL에 저장하지 않는다.
+- MySQL에는 `dog_images.relative_path`만 저장한다.
+- URL 서빙은 Nginx 정적 경로를 사용한다.
+  - `GET /files/{relative_path}`
+  - Nginx가 uploads 볼륨에서 직접 응답
+- Qdrant에는 이미지 바이트/원본/base64를 저장하지 않는다.
+
+## 5. 인증 상태 모델링 원칙
+
+- `verification_logs`는 인증 시도 이력의 source of truth다.
+- `dogs`의 아래 컬럼은 최신 snapshot이다.
+  - `nose_verification_status`
+  - `embedding_status`
+  - `duplicate_candidate_dog_id`
+  - `duplicate_similarity_score`
+  - `verified_at`
+
+중복 의심 정책:
+- `DUPLICATE_SUSPECTED`이면 active Qdrant point upsert를 기본적으로 수행하지 않는다.
+- `VERIFIED`인 경우에만 active point upsert 후 `dogs.embedding_status=INDEXED`로 본다.
+
+## 6. Qdrant payload 계약
 
 ```json
 {
-  "dog_id": "uuid",
+  "dog_id": "uuid-string",
   "user_id": 101,
-  "breed": "string",
-  "nose_image_path": "string",
-  "registered_at": "ISO8601",
-  "is_active": true
+  "nose_image_id": 55,
+  "nose_image_path": "dogs/{uuid}/nose/{yyyyMMdd_HHmmss}_{filename}.jpg",
+  "embedding_model": "mock-v1",
+  "embedding_dimension": 128,
+  "registered_at": "2026-05-07T00:00:00Z",
+  "is_active": true,
+  "breed": "optional",
+  "dog_status": "optional"
 }
 ```
 
-`user_id`는 MySQL `users.id`와 동일한 BIGINT 값을 사용합니다.
+금지 payload:
+- 개인정보(전화번호/주소/이메일/비밀번호)
+- 원본 이미지 바이너리, base64
+- 긴 description 전문
 
-**payload 원칙:**
-- payload에는 조회 성능을 위한 최소 식별 정보만 넣습니다.
-- 상세 데이터는 payload에서 `dog_id`를 꺼낸 뒤 MySQL에서 JOIN하여 조회합니다.
-- payload를 MySQL 테이블의 복사본처럼 쓰지 않습니다.
+## 7. 이번 MVP에서 제외한 후순위 테이블
 
----
+아래는 확장 후보이며 이번 migration baseline에는 포함하지 않았다.
 
-## 등록 트랜잭션 순서
+- `qdrant_sync_jobs`
+- `admin_actions`
+- `favorites`
+- `adoption_applications`
+- `post_images`
+- `dog_breeds`
+- `dog_verification_attempts`
 
-```
-1. MySQL: dogs 테이블에 INSERT (dog_id 생성)
-2. Python Embed: 이미지 → 벡터 변환
-3. Qdrant: 포인트 upsert (point_id = dog_id 또는 UUID)
-4. MySQL: qdrant_point_id 컬럼 업데이트 (선택)
-```
-
-MySQL INSERT를 먼저 수행하여 트랜잭션 실패 시 롤백이 가능하게 합니다.  
-Qdrant upsert 실패 시에는 MySQL 레코드는 유지하고 재시도 큐 또는 수동 재처리를 통해 동기화합니다.
-
----
-
-## 실패 처리 원칙
-
-- **Qdrant upsert 실패:** MySQL INSERT를 롤백하지 않습니다. 비문 임베딩 없이도 기본 개체 정보는 유지합니다. 실패 로그를 남기고 재처리 가능하게 합니다.
-- **MySQL INSERT 실패:** 전체 등록 흐름을 중단합니다. Qdrant에는 아무것도 쓰지 않습니다.
-- **Python Embed 호출 실패:** 임베딩 없이 강아지 등록 자체를 거부하거나, 임베딩 대기 상태로 저장합니다 (팀 결정 필요).
-- **재동기화:** MySQL에서 `qdrant_point_id IS NULL` 레코드를 조회해 배치로 재임베딩할 수 있습니다.

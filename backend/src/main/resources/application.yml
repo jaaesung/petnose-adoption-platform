@@ -57,6 +57,7 @@ qdrant:
   port: ${QDRANT_PORT:6333}
   collection: ${QDRANT_COLLECTION:dog_nose_embeddings}
   vector-dimension: ${QDRANT_VECTOR_DIM:128}
+  distance: ${QDRANT_DISTANCE:Cosine}
 
 upload:
   base-path: ${UPLOAD_BASE_PATH:/var/uploads}
