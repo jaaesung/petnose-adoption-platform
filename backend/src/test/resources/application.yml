@@ -25,6 +25,7 @@ qdrant:
   port: 9998
   collection: test_collection
   vector-dimension: 128
+  distance: Cosine
 
 upload:
   base-path: /tmp/uploads-test

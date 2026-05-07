@@ -1,80 +1,70 @@
-# Qdrant 벡터 스키마 초안
+# VECTOR SCHEMA DRAFT (MVP)
 
-> 이 문서는 `dog_nose_embeddings` 컬렉션 기준의 초안입니다. 임베딩 모델 확정 후 차원 수를 갱신하세요.
+## 1. Collection Contract
 
----
+- Name: `dog_nose_embeddings`
+- Vector size: `128` (`mock-v1`)
+- Distance: `Cosine`
+- Point id: `dogs.id`와 동일 UUID string
 
-## 컬렉션 정보
+설정 오버라이드:
+- `qdrant.collection`
+- `qdrant.vector-dimension`
+- `qdrant.distance`
 
-| 항목 | 값 |
-|---|---|
-| 컬렉션명 | `dog_nose_embeddings` |
-| 벡터 차원 | `128` (현재 `mock-v1` 기준) |
-| 거리 함수 | `Cosine` (비문 유사도 기준) |
+기본값:
+- `dog_nose_embeddings`, `128`, `Cosine`
 
-> TODO: 실제 모델 적용 시 차원이 변경되면 컬렉션 재생성 및 문서 갱신이 필요합니다.
-
----
-
-## 포인트 구조
+## 2. Payload Contract
 
 ```json
 {
-  "id": "UUID (dogs.id와 동일하게 맞추는 것 권장)",
-  "vector": [0.12, -0.34, 0.56, "..."],
-  "payload": {
-    "dog_id": "uuid",
-    "user_id": 101,
-    "breed": "믹스",
-    "nose_image_path": "dogs/550e8400-e29b-41d4-a716-446655440000/nose/20260412_143022_front.jpg",
-    "registered_at": "2026-04-12T10:00:00Z",
-    "is_active": true
-  }
+  "dog_id": "uuid-string",
+  "user_id": 101,
+  "nose_image_id": 55,
+  "nose_image_path": "dogs/{uuid}/nose/{yyyyMMdd_HHmmss}_{filename}.jpg",
+  "embedding_model": "mock-v1",
+  "embedding_dimension": 128,
+  "registered_at": "2026-05-07T00:00:00Z",
+  "is_active": true,
+  "breed": "optional",
+  "dog_status": "optional"
 }
 ```
 
----
+필수 의미:
+- `dog_id`: MySQL `dogs.id`
+- `user_id`: MySQL `users.id`
+- `nose_image_id`: MySQL `dog_images.id`
+- `nose_image_path`: MySQL에 저장된 relative path 맥락
+- `embedding_dimension`: Python 응답 `dimension`과 동일
 
-## payload 설명
+## 3. 보안/개인정보 금지 규칙
 
-| 필드 | 타입 | 설명 |
-|---|---|---|
-| `dog_id` | string (UUID) | MySQL dogs.id와 동일 |
-| `user_id` | number (BIGINT) | 등록한 사용자 ID (`users.id`) |
-| `breed` | string | 품종 (검색 필터용) |
-| `nose_image_path` | string | 원본 비문 이미지 상대 경로 (`dog_images.file_path`) |
-| `registered_at` | string (ISO8601) | 임베딩 등록 시각 |
-| `is_active` | boolean | 비활성(분양완료, 삭제) 시 false |
+Qdrant payload 금지:
+- `owner_phone`, `address`, `email`, `password`
+- `raw_image_bytes`, `raw_image_base64`
+- 긴 `description` 원문
+- 기타 PII
 
-payload는 검색 결과에서 바로 쓸 수 있는 최소 정보만 담습니다.  
-상세 데이터는 `dog_id`를 이용해 MySQL에서 조회합니다.
+## 4. 저장 경계
 
----
+- MySQL에는 벡터를 저장하지 않는다.
+- Qdrant에는 원본 이미지를 저장하지 않는다.
+- MySQL `dog_images.relative_path`만 저장하고,
+  Nginx가 `/files/{relative_path}`를 정적 서빙한다.
 
-## 저장 시 주의사항
+## 5. 인증/중복 의심 정책
 
-- Qdrant point `id`는 UUID 또는 unsigned integer만 허용합니다. `dog_id`를 UUID로 사용하면 그대로 쓸 수 있습니다.
-- 벡터 차원 수는 컬렉션 생성 시 고정됩니다. 모델 변경 시 컬렉션을 재생성해야 합니다.
-- 동일 `dog_id`로 upsert하면 기존 포인트가 덮어써집니다 (재등록 시 활용).
+- `verification_logs`는 인증 시도 이력의 source of truth다.
+- `dogs`의 인증 관련 컬럼은 최신 snapshot이다.
+- `DUPLICATE_SUSPECTED`이면 active point upsert를 기본적으로 생략한다.
+- `VERIFIED`일 때만 active point upsert 후 `dogs.embedding_status=INDEXED`로 본다.
 
-## 조회 시 주의사항
+## 6. 운영 체크리스트
 
-- 유사도 검색 후 반드시 `is_active: true` 필터를 적용하여 비활성 개체를 제외합니다.
-- top-K 결과에서 similarity threshold를 설정하여 너무 낮은 유사도 결과는 무시합니다 (임계값은 실험 후 결정).
-- 검색 결과의 payload에서 `dog_id`를 꺼내 MySQL `dogs` 테이블과 JOIN하여 상세 정보를 반환합니다.
+1. 앱 기동 시 컬렉션 미존재면 생성
+2. 컬렉션이 이미 존재하면 dimension/distance 계약 검증
+3. 불일치 시 앱은 기동을 유지하되 경고 로그를 남김
+4. 스키마 변경(모델 차원 변경 등) 시 컬렉션 재구성 계획을 별도 수립
 
----
-
-## 컬렉션 생성 예시 (Qdrant HTTP API)
-
-```json
-PUT /collections/dog_nose_embeddings
-{
-  "vectors": {
-    "size": 128,
-    "distance": "Cosine"
-  }
-}
-```
-
-실제 차원 수는 Python 임베딩 모델 출력 크기에 맞게 변경하세요.

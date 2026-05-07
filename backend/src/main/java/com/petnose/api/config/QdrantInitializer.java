@@ -1,5 +1,7 @@
 package com.petnose.api.config;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
@@ -8,6 +10,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+
+import java.util.Iterator;
+import java.util.Map;
 
 /**
  * 앱 기동 시 Qdrant 컬렉션 존재 여부를 확인하고 없으면 생성합니다.
@@ -29,7 +34,11 @@ public class QdrantInitializer implements ApplicationRunner {
     @Value("${qdrant.vector-dimension}")
     private int vectorDimension;
 
+    @Value("${qdrant.distance:Cosine}")
+    private String vectorDistance;
+
     private final RestTemplate restTemplate = new RestTemplate();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Override
     public void run(ApplicationArguments args) {
@@ -37,8 +46,9 @@ public class QdrantInitializer implements ApplicationRunner {
         String collectionUrl = baseUrl + "/collections/" + collection;
 
         try {
-            restTemplate.getForEntity(collectionUrl, String.class);
+            String responseBody = restTemplate.getForObject(collectionUrl, String.class);
             log.info("[Qdrant] 컬렉션 '{}' 이미 존재합니다.", collection);
+            validateCollectionContract(responseBody);
         } catch (HttpClientErrorException.NotFound e) {
             createCollection(collectionUrl);
         } catch (ResourceAccessException e) {
@@ -54,16 +64,64 @@ public class QdrantInitializer implements ApplicationRunner {
                 {
                   "vectors": {
                     "size": %d,
-                    "distance": "Cosine"
+                    "distance": "%s"
                   }
                 }
-                """.formatted(vectorDimension);
+                """.formatted(vectorDimension, vectorDistance);
         try {
             restTemplate.put(collectionUrl, body);
-            log.info("[Qdrant] 컬렉션 '{}' 생성 완료 (dimension={}, distance=Cosine)",
-                    collection, vectorDimension);
+            log.info("[Qdrant] 컬렉션 '{}' 생성 완료 (dimension={}, distance={})",
+                    collection, vectorDimension, vectorDistance);
         } catch (Exception e) {
             log.warn("[Qdrant] 컬렉션 생성 실패: {}", e.getMessage());
+        }
+    }
+
+    private void validateCollectionContract(String responseBody) {
+        if (responseBody == null || responseBody.isBlank()) {
+            log.warn("[Qdrant] 컬렉션 '{}' 메타데이터를 읽지 못했습니다. 수동 점검이 필요합니다.", collection);
+            return;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(responseBody);
+            JsonNode vectorsNode = root.path("result").path("config").path("params").path("vectors");
+
+            Integer actualSize = null;
+            String actualDistance = null;
+
+            if (vectorsNode.has("size") && vectorsNode.has("distance")) {
+                actualSize = vectorsNode.path("size").asInt();
+                actualDistance = vectorsNode.path("distance").asText();
+            } else if (vectorsNode.isObject()) {
+                Iterator<Map.Entry<String, JsonNode>> fields = vectorsNode.fields();
+                if (fields.hasNext()) {
+                    JsonNode namedVector = fields.next().getValue();
+                    if (namedVector != null && namedVector.has("size") && namedVector.has("distance")) {
+                        actualSize = namedVector.path("size").asInt();
+                        actualDistance = namedVector.path("distance").asText();
+                    }
+                }
+            }
+
+            if (actualSize == null || actualDistance == null) {
+                log.warn("[Qdrant] 컬렉션 '{}'의 vectors 설정을 파싱하지 못했습니다. response={}", collection, responseBody);
+                return;
+            }
+
+            boolean sizeMatches = actualSize == vectorDimension;
+            boolean distanceMatches = vectorDistance.equalsIgnoreCase(actualDistance);
+
+            if (sizeMatches && distanceMatches) {
+                log.info("[Qdrant] 컬렉션 '{}' 계약 검증 통과 (dimension={}, distance={})",
+                        collection, actualSize, actualDistance);
+                return;
+            }
+
+            log.warn("[Qdrant] 컬렉션 '{}' 계약 불일치 감지 - expected(dimension={}, distance={}), actual(dimension={}, distance={})",
+                    collection, vectorDimension, vectorDistance, actualSize, actualDistance);
+        } catch (Exception e) {
+            log.warn("[Qdrant] 컬렉션 '{}' 메타데이터 파싱 실패: {}", collection, e.getMessage());
         }
     }
 }
