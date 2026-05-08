@@ -38,6 +38,11 @@ Spring 설정 기본값:
 - `qdrant.vector-dimension=128`
 - `qdrant.distance=Cosine`
 
+실제 모델(`dog-nose-identification2`) 테스트 권장값:
+- `qdrant.collection=dog_nose_embeddings_real_v1`
+- `qdrant.vector-dimension=2048` (현재 로컬 모델 분석 기준)
+- 기존 mock 컬렉션과 분리 운영
+
 ## 4. 이미지 저장 원칙
 
 - 이미지 원본 파일은 MySQL에 저장하지 않는다.
@@ -59,7 +64,8 @@ Spring 설정 기본값:
 
 중복 의심 정책:
 - `DUPLICATE_SUSPECTED`이면 active Qdrant point upsert를 기본적으로 수행하지 않는다.
-- `VERIFIED`인 경우에만 active point upsert 후 `dogs.embedding_status=INDEXED`로 본다.
+- `VERIFIED`인 경우에만 active point upsert 후 `dogs.embedding_status=COMPLETED`로 본다.
+- 실제 모델 전환 초기에는 동일 파일 재등록 검증을 우선하고, threshold calibration을 별도 진행한다.
 
 ## 6. Qdrant payload 계약
 
@@ -67,14 +73,10 @@ Spring 설정 기본값:
 {
   "dog_id": "uuid-string",
   "user_id": 101,
-  "nose_image_id": 55,
   "nose_image_path": "dogs/{uuid}/nose/{yyyyMMdd_HHmmss}_{filename}.jpg",
-  "embedding_model": "mock-v1",
-  "embedding_dimension": 128,
   "registered_at": "2026-05-07T00:00:00Z",
   "is_active": true,
-  "breed": "optional",
-  "dog_status": "optional"
+  "breed": "optional"
 }
 ```
 
@@ -94,4 +96,3 @@ Spring 설정 기본값:
 - `post_images`
 - `dog_breeds`
 - `dog_verification_attempts`
-

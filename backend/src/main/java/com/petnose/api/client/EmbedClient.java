@@ -80,8 +80,13 @@ public class EmbedClient {
             throw new RuntimeException("embed service 응답이 null입니다.");
         }
 
+        String status = (String) response.get("status");
+        if (status == null || !"ok".equalsIgnoreCase(status)) {
+            throw new EmbedClientException("embed service 응답 status가 비정상입니다.", null, String.valueOf(response), null);
+        }
+
         List<Number> vectorNumbers = (List<Number>) response.get("vector");
-        if (vectorNumbers == null) {
+        if (vectorNumbers == null || vectorNumbers.isEmpty()) {
             throw new EmbedClientException("embed service 응답에 vector 필드가 없습니다.", null, String.valueOf(response), null);
         }
         List<Double> vector = vectorNumbers.stream().map(Number::doubleValue).toList();
@@ -93,11 +98,11 @@ public class EmbedClient {
         int dimension = number.intValue();
 
         String model = (String) response.get("model");
-        if (model == null) {
+        if (model == null || model.isBlank()) {
             throw new EmbedClientException("embed service 응답에 model 필드가 없습니다.", null, String.valueOf(response), null);
         }
 
-        log.debug("[EmbedClient] 임베딩 완료: dimension={}, model={}", dimension, model);
+        log.debug("[EmbedClient] 임베딩 완료: status={}, dimension={}, model={}", status, dimension, model);
         return new EmbedResponse(vector, dimension, model);
     }
 

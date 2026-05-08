@@ -1,6 +1,8 @@
 # dev 환경 오버라이드
 # 사용: docker compose -f compose.yaml -f compose.dev.yaml up -d
 # 또는:  bash infra/scripts/dev-up.sh
+# 실제 모델 모드가 필요하면 compose.real-model.yaml을 추가로 병합:
+#   docker compose -f compose.yaml -f compose.dev.yaml -f compose.real-model.yaml up -d --build
 
 services:
   mysql:
