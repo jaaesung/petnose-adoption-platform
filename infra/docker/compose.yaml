@@ -38,9 +38,14 @@ services:
     build:
       context: ../../python-embed
       dockerfile: Dockerfile
+      args:
+        INSTALL_REAL_MODEL_DEPS: ${PYTHON_EMBED_INSTALL_REAL_DEPS:-0}
     environment:
       EMBED_VECTOR_DIM: ${QDRANT_VECTOR_DIM:-128}
       EMBED_MODEL: ${EMBED_MODEL:-mock-v1}
+      EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
+      DOG_NOSE_MODEL_DIR: ${DOG_NOSE_MODEL_DIR:-/models/dog_nose_identification2}
+      DOG_NOSE_MODEL_PATH: ${DOG_NOSE_MODEL_PATH:-}
       MAX_IMAGE_BYTES: ${MAX_UPLOAD_SIZE_MB:-20}000000
     volumes:
       - uploads_data:${UPLOAD_BASE_PATH:-/var/uploads}
@@ -62,6 +67,10 @@ services:
       QDRANT_PORT: ${QDRANT_PORT:-6333}
       QDRANT_COLLECTION: ${QDRANT_COLLECTION:-dog_nose_embeddings}
       QDRANT_VECTOR_DIM: ${QDRANT_VECTOR_DIM:-128}
+      QDRANT_DISTANCE: ${QDRANT_DISTANCE:-Cosine}
+      QDRANT_SEARCH_TOP_K: ${QDRANT_SEARCH_TOP_K:-5}
+      QDRANT_SEARCH_SCORE_THRESHOLD: ${QDRANT_SEARCH_SCORE_THRESHOLD:-0.95}
+      NOSE_DUPLICATE_THRESHOLD: ${NOSE_DUPLICATE_THRESHOLD:-0.95}
       UPLOAD_BASE_PATH: ${UPLOAD_BASE_PATH:-/var/uploads}
       MAX_UPLOAD_SIZE_MB: ${MAX_UPLOAD_SIZE_MB:-20}
     volumes:

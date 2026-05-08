@@ -22,9 +22,9 @@ Form fields:
 Response 200:
 {
   "status": "ok",
-  "vector": [0.12, -0.34, 0.56, ...],  // float 배열, 고정 차원
+  "vector": [0.12, -0.34, 0.56, ...],  // float 배열
   "dimension": 128,                    // 필드명은 dim이 아니라 dimension
-  "model": "mock-v1"                   // 사용된 모델 식별자
+  "model": "mock-v1"                   // 또는 dog-nose-identification2:s101_224
 }
 
 Response 400:
@@ -40,6 +40,14 @@ Response 500:
   "detail": {
     "error": "EMBED_FAILED",
     "message": "임베딩 생성 중 오류가 발생했습니다."
+  }
+}
+
+Response 503:
+{
+  "detail": {
+    "error": "MODEL_NOT_READY",
+    "message": "실제 모델이 아직 로드되지 않았습니다."
   }
 }
 ```
@@ -58,9 +66,37 @@ Response 200:
   "status": "ok",
   "model_loaded": true,
   "model": "mock-v1",
-  "vector_dim": 128
+  "vector_dim": 128,
+  "backend": "mock",
+  "device": "cpu",
+  "model_path_exists": null
 }
 ```
+
+실제 모델 모드 예시:
+```json
+{
+  "status": "ok",
+  "model_loaded": true,
+  "model": "dog-nose-identification2:s101_224",
+  "vector_dim": 2048,
+  "backend": "torch+timm",
+  "device": "cpu",
+  "model_path_exists": true
+}
+```
+
+---
+
+## 모델 선택
+
+- `EMBED_MODEL=mock-v1`
+  - 기본값, 경량 mock, deterministic 출력
+  - 기본 차원: 128
+- `EMBED_MODEL=dog-nose-identification2`
+  - 실제 모델 checkpoint 로드
+  - 현재 분석 기준 차원: 2048
+  - `DOG_NOSE_MODEL_DIR` 또는 `DOG_NOSE_MODEL_PATH` 필요
 
 ---
 
@@ -87,6 +123,7 @@ Response 200:
 ### 에러 처리
 
 - 400 응답: 이미지 자체 문제 → Spring Boot가 클라이언트에 422 반환
+- 503 응답: 모델 미로딩/외부 의존성 오류 → Spring Boot가 503 처리
 - 500 응답 / timeout: Python 서비스 오류 → Spring Boot가 503 또는 500 반환
 - 연결 불가: Python 컨테이너 다운 → Spring Boot가 503 반환
 
@@ -95,5 +132,6 @@ Response 200:
 ## 버전 관리
 
 - 모델 버전이 바뀌면 벡터 차원이 달라질 수 있습니다.
-- 모델 변경 시 Qdrant 컬렉션을 재생성하고 전체 재임베딩이 필요합니다.
+- 모델 변경 시 Qdrant 컬렉션 차원 호환성을 먼저 확인해야 합니다.
+- Qdrant 차원은 컬렉션 생성 후 변경 불가이므로, 실모델 테스트는 별도 컬렉션(예: `dog_nose_embeddings_real_v1`)을 권장합니다.
 - `model` 필드를 응답에 포함하여 Spring Boot가 모델 버전 불일치를 감지할 수 있게 합니다.

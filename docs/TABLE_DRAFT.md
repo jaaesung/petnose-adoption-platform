@@ -1,124 +1,142 @@
-# DB 테이블 설계 초안
+# TABLE DRAFT (MVP Final Baseline)
 
-> 이 문서는 1차 설계 초안입니다.  
-> 단, **테이블명/PK 타입은 `backend/src/main/resources/db/migration/V1__baseline.sql`을 canonical 기준으로 고정**합니다.
+## 1. 스키마 기준
 
----
+- DBMS: MySQL 8.0
+- Storage engine: InnoDB
+- 문자셋: `utf8mb4` (가능한 경우 `utf8mb4_0900_ai_ci`)
+- soft delete: `deleted_at` 기준
+- enum 저장: `VARCHAR + CHECK` (JPA는 `EnumType.STRING`)
 
-## 테이블 후보 목록
+## 2. 테이블 목록 (8개)
+
+1. `users`
+2. `refresh_tokens`
+3. `shelter_profiles`
+4. `dogs`
+5. `dog_images`
+6. `verification_logs`
+7. `adoption_posts`
+8. `reports`
+
+## 3. 핵심 관계
+
+- `users (1) - (N) refresh_tokens` (`ON DELETE CASCADE`)
+- `users (1) - (1) shelter_profiles` (`user_id UNIQUE`, `ON DELETE RESTRICT`)
+- `users (1) - (N) dogs`
+- `dogs (1) - (N) dog_images`
+- `dogs (1) - (N) adoption_posts`
+- `dogs (1) - (N) verification_logs`
+- `users (1) - (N) reports` (`reporter_user_id`)
+- `users (1) - (N) reports` (`handled_by_user_id`, `ON DELETE SET NULL`)
+
+주의:
+- 강한 감사 추적이 필요한 도메인(`dogs`, `dog_images`, `verification_logs`, `adoption_posts`, `reports`)에는 hard delete cascade를 사용하지 않는다.
+- `reports.target_type + target_id`는 polymorphic 구조이며 직접 FK를 걸지 않는다.
+
+## 4. 테이블별 요약
 
 ### `users`
+- PK: `id BIGINT AUTO_INCREMENT`
+- Unique: `email`
+- enum: `role` (`ADOPTER|SHELTER|ADMIN`), `status` (`ACTIVE|SUSPENDED|WITHDRAWN`)
+- 감사 컬럼: `created_at`, `updated_at`, `deleted_at`
 
-사용자 계정 정보를 저장합니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK, BIGINT (AUTO_INCREMENT) |
-| email | 로그인 식별자, 유니크 |
-| password_hash | bcrypt 해시 |
-| role | `ADOPTER`, `SHELTER`, `ADMIN` 등 |
-| created_at | 가입 시각 |
-| is_active | 탈퇴/정지 여부 |
-
-TODO: 외부 API 노출용 사용자 식별자를 UUID(`public_id`)로 별도 둘지는 도메인 설계 단계에서 결정.
+### `refresh_tokens`
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK: `user_id -> users.id ON DELETE CASCADE`
+- Unique: `token_hash (CHAR(64))`
+- 만료/폐기 컬럼: `expires_at`, `revoked_at`
 
 ### `shelter_profiles`
-
-보호소 또는 분양자 프로필입니다. `users`와 1:1 관계입니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK |
-| user_id | FK → users.id |
-| shelter_name | 보호소/단체명 |
-| contact | 연락처 |
-| address | 주소 |
-| verified | 인증 여부 |
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK: `user_id -> users.id ON DELETE RESTRICT`
+- Unique: `user_id`
+- enum: `verification_status` (`PENDING|VERIFIED|REJECTED`)
+- 감사 컬럼: `created_at`, `updated_at`, `deleted_at`
 
 ### `dogs`
-
-등록된 강아지 개체 정보입니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK, UUID 권장 (Qdrant point_id와 맞추기 위해) |
-| owner_user_id | FK → users.id (등록자) |
-| name | 강아지 이름 |
-| breed | 품종 |
-| gender | 성별 |
-| birth_date | 생년월일 (대략) |
-| status | `REGISTERED`, `LOST`, `ADOPTED` 등 |
-| qdrant_point_id | Qdrant 포인트 ID (null이면 임베딩 미완료) |
-| created_at | 등록 시각 |
+- PK: `id CHAR(36)` (UUID 문자열)
+- FK: `registered_by_user_id -> users.id`
+- Self FK: `duplicate_candidate_dog_id -> dogs.id ON DELETE SET NULL`
+- enum:
+  - `sex` (`MALE|FEMALE|UNKNOWN`)
+  - `status` (`DRAFT|ACTIVE|ADOPTED|HIDDEN|REJECTED`)
+  - `nose_verification_status` (`NOT_REQUESTED|PENDING|VERIFIED|DUPLICATE_SUSPECTED|FAILED`)
+  - `embedding_status` (`NOT_STARTED|PENDING|INDEXED|SKIPPED_DUPLICATE|FAILED`)
+- Qdrant 연결 컬럼:
+  - `qdrant_collection`
+  - `qdrant_point_id`
+  - `embedding_model`
+  - `embedding_dimension`
+- snapshot 컬럼:
+  - `duplicate_candidate_dog_id`
+  - `duplicate_similarity_score`
+  - `verified_at`
+- Unique: `(qdrant_collection, qdrant_point_id)`
 
 ### `dog_images`
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK:
+  - `dog_id -> dogs.id`
+  - `uploaded_by_user_id -> users.id`
+- enum:
+  - `image_type` (`PROFILE|NOSE_ORIGINAL|NOSE_CROP|EXTRA`)
+  - `storage_provider` (`LOCAL|S3`)
+  - `image_status` (`ACTIVE|REJECTED|DELETED`)
+  - `quality_status` (`NOT_CHECKED|PASSED|FAILED`)
+- Unique: `relative_path`
+- 원칙: 이미지 바이너리 저장 금지, 경로/메타데이터만 저장
 
-강아지 이미지 경로를 별도 관리합니다. 비문 이미지와 일반 사진을 함께 관리합니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK |
-| dog_id | FK → dogs.id |
-| image_type | `NOSE`, `PROFILE`, `EXTRA` |
-| file_path | 서버 내 저장 경로 (`uploads/` 기준) |
-| uploaded_at | 업로드 시각 |
-
-### `auth_logs`
-
-인증 시도 이력을 기록합니다. 비문 인증 결과 추적에 사용합니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK |
-| requested_by | FK → users.id |
-| target_dog_id | 조회 대상 강아지 (nullable) |
-| matched_dog_id | 매칭된 강아지 (nullable) |
-| similarity_score | Qdrant 유사도 점수 |
-| result | `MATCHED`, `NOT_FOUND`, `ERROR` |
-| created_at | 시도 시각 |
+### `verification_logs`
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK:
+  - `dog_id -> dogs.id`
+  - `nose_image_id -> dog_images.id`
+  - `requested_by_user_id -> users.id`
+  - `duplicate_candidate_dog_id -> dogs.id ON DELETE SET NULL`
+- Unique: `request_id` (nullable unique)
+- enum: `verification_status` (`PENDING|VERIFIED|DUPLICATE_SUSPECTED|FAILED`)
+- 이력 컬럼: score, threshold, elapsed(ms), failure code/message
+- 역할: 인증 시도 이력 Source of Truth
 
 ### `adoption_posts`
-
-입양 게시글입니다. 보호소 또는 개인이 작성합니다.
-
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK |
-| author_user_id | FK → users.id |
-| dog_id | FK → dogs.id |
-| title | 게시글 제목 |
-| content | 내용 |
-| status | `OPEN`, `CLOSED`, `ADOPTED` |
-| created_at | 작성 시각 |
-| updated_at | 수정 시각 |
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK:
+  - `dog_id -> dogs.id`
+  - `author_user_id -> users.id`
+- enum: `status` (`DRAFT|PUBLISHED|CLOSED|HIDDEN|DELETED`)
+- 메타: `view_count`, `published_at`, `closed_at`
+- 정책: 동일 dog의 동시 `PUBLISHED` 1개 제한은 서비스 레이어에서 검증
 
 ### `reports`
+- PK: `id BIGINT AUTO_INCREMENT`
+- FK:
+  - `reporter_user_id -> users.id`
+  - `handled_by_user_id -> users.id ON DELETE SET NULL`
+- polymorphic target:
+  - `target_type` (`USER|DOG|DOG_IMAGE|ADOPTION_POST|VERIFICATION_LOG`)
+  - `target_id` (`VARCHAR(64)`)
+- enum:
+  - `reason_type` (`FAKE_REGISTRATION|DUPLICATE_SUSPECTED|INAPPROPRIATE_POST|IMAGE_ABUSE|OTHER`)
+  - `status` (`PENDING|IN_REVIEW|RESOLVED|REJECTED`)
 
-부적절한 게시글 또는 사용자 신고입니다.
+## 5. MySQL / 파일 / 벡터 경계
 
-| 컬럼 후보 | 설명 |
-|---|---|
-| id | PK |
-| reporter_user_id | FK → users.id |
-| target_type | `POST`, `USER` |
-| target_id | 신고 대상 ID |
-| reason | 신고 사유 |
-| status | `PENDING`, `RESOLVED` |
-| created_at | 신고 시각 |
+- MySQL에는 이미지 상대경로(`relative_path`)만 저장한다.
+- 정적 파일 서빙은 Nginx의 `/files/{relative_path}`에서 처리한다.
+- 벡터 값은 MySQL에 저장하지 않는다.
+- 벡터는 Qdrant `dog_nose_embeddings` 컬렉션에 저장한다.
 
----
+## 6. 제외된 후순위 테이블 (확장 후보)
 
-## 관계 요약
+이번 MVP baseline에는 아래 테이블을 만들지 않았다.
 
-```
-users 1 ── 1 shelter_profiles
-users 1 ── N dogs
-dogs  1 ── N dog_images
-dogs  1 ── 1 adoption_posts (일반적으로)
-users 1 ── N auth_logs
-users 1 ── N reports
-```
+- `qdrant_sync_jobs`
+- `admin_actions`
+- `favorites`
+- `adoption_applications`
+- `post_images`
+- `dog_breeds`
+- `dog_verification_attempts`
 
----
-
-> 실제 DDL은 구현 단계에서 `backend/src/main/resources/` 또는 Flyway 마이그레이션으로 관리합니다.

@@ -1,100 +1,115 @@
 # python-embed — 비문 임베딩 서비스
 
 ## 역할
+- Spring Boot에서만 호출되는 비문 임베딩 생성 서비스
+- `/embed` 응답 계약 유지: `status`, `vector`, `dimension`, `model`
+- Flutter는 직접 호출하지 않음
 
-강아지 비문 이미지를 받아 임베딩 벡터를 반환하는 전용 서비스입니다.  
-Spring Boot에서만 호출하며, Flutter에서 직접 접근하지 않습니다.
+## 지원 모드
+- `EMBED_MODEL=mock-v1` (기본)
+- `EMBED_MODEL=dog-nose-identification2` (실제 모델)
 
-API 계약은 [docs/API_CONTRACTS/spring-python.md](../docs/API_CONTRACTS/spring-python.md)를 참고하세요.
+## 모드별 의존성 정책
+- 기본 `requirements.txt`는 mock 회귀/CI 경량 유지를 위한 최소 의존성만 포함
+- 실제 모델 의존성은 `requirements-real.txt`로 분리
+- Docker 빌드 인자 `PYTHON_EMBED_INSTALL_REAL_DEPS=1`일 때만 실제 모델 의존성 설치
 
----
+## 환경변수
+- `EMBED_MODEL` (`mock-v1` | `dog-nose-identification2`)
+- `EMBED_VECTOR_DIM` (mock 출력 차원, 기본 128)
+- `EMBED_DEVICE` (기본 `cpu`)
+- `DOG_NOSE_MODEL_DIR` (기본 `/models/dog_nose_identification2`)
+- `DOG_NOSE_MODEL_PATH` (선택, checkpoint 직접 지정)
+- `MAX_IMAGE_BYTES` (기본 20MB)
 
-## 기술 스택
-
-- Python 3.11
-- FastAPI + Uvicorn
-- 의존성: `fastapi`, `uvicorn[standard]`, `python-multipart`
-
----
-
-## 현재 구현 상태 — [MOCK MODE]
-
-`EMBED_MODEL=mock-v1` (기본값) 환경에서 동작합니다.  
-실제 딥러닝 모델 없이 다음과 같이 동작합니다:
-
-- 이미지 바이트의 SHA-256 해시를 시드로 사용
-- 재현 가능한(deterministic) 단위 벡터(128차원) 생성
-- **동일 이미지 → 항상 동일 벡터** → 유사도 테스트 가능
-- 실제 모델 적용 전까지 안정적인 파이프라인 검증 가능
-
-실제 모델 적용 시 `app/main.py`의 `_load_model()` 함수를 구현하고  
-`EMBED_MODEL` 환경변수를 변경하면 됩니다.
-
----
-
-## 엔드포인트
-
-| 경로 | 메서드 | 설명 |
-|---|---|---|
-| `/health` | GET | 서비스 상태 확인 (Docker healthcheck 사용) |
-| `/embed` | POST | 비문 이미지 → 임베딩 벡터 반환 |
-
-### `/embed` 요청/응답 예시
-
-```bash
-curl -X POST http://localhost:8000/embed \
-  -F "image=@/path/to/nose.jpg"
-```
+## Health 응답
+기존 키(`status`, `model_loaded`, `model`, `vector_dim`)는 유지하며 디버깅 필드를 추가합니다.
 
 ```json
 {
   "status": "ok",
-  "vector": [0.12, -0.34, ...],
-  "dimension": 128,
-  "model": "mock-v1"
+  "model_loaded": true,
+  "model": "dog-nose-identification2:s101_224",
+  "vector_dim": 2048,
+  "backend": "torch+timm",
+  "device": "cpu",
+  "model_path_exists": true
 }
 ```
 
----
-
-## 로컬 실행
-
-Docker Compose 권장:
-
+## Mock-v1 회귀 실행
 ```bash
-bash infra/scripts/dev-up.sh
+docker compose --env-file infra/docker/.env \
+  -f infra/docker/compose.yaml \
+  -f infra/docker/compose.dev.yaml \
+  up -d --build
 ```
 
-단독 실행:
-
 ```bash
-cd python-embed
-python -m venv .venv
-# Linux/macOS:
-source .venv/bin/activate
-# Windows:
-.venv\Scripts\activate
-
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+curl -X POST http://localhost:8000/embed -F "image=@/path/to/nose.jpg"
 ```
 
----
+기대:
+- `model=mock-v1`
+- `dimension=128`
 
-## 주요 환경변수
+## 실제 모델 실행 (Docker)
+1. `infra/docker/.env` 설정
+- `EMBED_MODEL=dog-nose-identification2`
+- `PYTHON_EMBED_INSTALL_REAL_DEPS=1`
+- `DOG_NOSE_MODEL_DIR_HOST=C:/Dev/dog_nose_identification2/dog_nose_identification2` (Windows 예시)
+- `QDRANT_COLLECTION=dog_nose_embeddings_real_v1` (권장)
+- `QDRANT_VECTOR_DIM=2048` (현재 분석 기준)
 
-| 변수 | 설명 | 기본값 |
-|---|---|---|
-| `EMBED_VECTOR_DIM` | 출력 벡터 차원 (Qdrant와 일치 필요) | `128` |
-| `EMBED_MODEL` | 모델 식별자 (`mock-v1` = mock mode) | `mock-v1` |
-| `MAX_IMAGE_BYTES` | 최대 이미지 크기(바이트) | `20000000` |
+2. 오버라이드 파일 포함 실행
+```bash
+docker compose --env-file infra/docker/.env \
+  -f infra/docker/compose.yaml \
+  -f infra/docker/compose.dev.yaml \
+  -f infra/docker/compose.real-model.yaml \
+  up -d --build
+```
 
----
+3. 확인
+```bash
+curl http://localhost:8000/health
+curl -X POST http://localhost:8000/embed -F "image=@/path/to/nose.jpg"
+```
 
-## 팀 최소 운영 규칙
+## Qdrant 차원 주의
+- Qdrant collection 차원은 변경 불가
+- mock(128)과 real(2048) 혼용 금지
+- real 테스트는 별도 collection 권장
 
-- 기본 모드는 `mock-v1` 유지(계약 안정성 우선).
-- 벡터 차원/응답 스키마를 바꾸면 backend 연동 계약 문서를 먼저 갱신합니다.
-- 서비스는 Spring에서만 호출하며 Flutter가 직접 호출하지 않습니다.
+## 같은 이미지 2회 등록 테스트 (Spring 파이프라인)
+seed user(`user_id=1` 등)가 이미 존재한다고 가정:
 
-> 추후 실제 비문 인식 모델 적용 후 이 문서를 갱신할 예정입니다.
+```powershell
+curl.exe -i -X POST "http://localhost/api/dogs/register" `
+  -F "user_id=1" `
+  -F "name=초코" `
+  -F "breed=말티즈" `
+  -F "gender=MALE" `
+  -F "birth_date=2023-01-01" `
+  -F "description=real model first register" `
+  -F "nose_image=@C:\Dev\sample\1.jpg;type=image/jpeg"
+```
+
+```powershell
+curl.exe -i -X POST "http://localhost/api/dogs/register" `
+  -F "user_id=1" `
+  -F "name=초코-중복시도" `
+  -F "breed=말티즈" `
+  -F "gender=MALE" `
+  -F "birth_date=2023-01-01" `
+  -F "description=real model duplicate test" `
+  -F "nose_image=@C:\Dev\sample\1.jpg;type=image/jpeg"
+```
+
+기대:
+- 1회차 `registration_allowed=true`, `embedding_status=COMPLETED`
+- 2회차 `registration_allowed=false`, `verification_status=DUPLICATE_SUSPECTED`
+
+## 모델 파일 커밋 금지
+- `.pt`, `.pth`, `.ckpt`, `.onnx`, `.h5`, `.keras` 등 weight 파일은 git 커밋 금지
+- 모델은 외부 경로/볼륨 마운트로 주입

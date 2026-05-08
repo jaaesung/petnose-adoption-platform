@@ -71,25 +71,56 @@ Response 401: 인증 실패
 ```
 POST /api/dogs/register
 Content-Type: multipart/form-data
-Authorization: Bearer <JWT>
+Authorization: Bearer <JWT>  // TODO: 현재 MVP에서는 user_id multipart field 임시 사용
 
 Form fields:
+  user_id: number (임시, 추후 JWT principal로 전환)
   name: string
   breed: string
-  gender: string  // MALE | FEMALE
-  birth_date: string (YYYY-MM-DD, 선택)
-  nose_image: file (JPEG/PNG)
+  gender: string  // MALE | FEMALE | UNKNOWN
+  birth_date: string (YYYY-MM-DD, optional)
+  description: string (optional)
+  nose_image: file (JPEG/PNG, required)
+  profile_image: file (JPEG/PNG, optional)
 
 Response 201:
 {
   "dog_id": "uuid",
-  "name": "초코",
+  "registration_allowed": true,
   "status": "REGISTERED",
-  "embedding_status": "COMPLETED"  // COMPLETED | PENDING | FAILED
+  "verification_status": "VERIFIED",
+  "embedding_status": "COMPLETED",
+  "qdrant_point_id": "uuid",
+  "model": "mock-v1",
+  "dimension": 128,
+  "max_similarity_score": 0.41,
+  "nose_image_url": "/files/dogs/{uuid}/nose/20260508_010203_nose.jpg",
+  "message": "중복 의심 개체가 없어 등록이 완료되었습니다."
+}
+
+Response 200 (중복 의심):
+{
+  "dog_id": "new-dog-id",
+  "registration_allowed": false,
+  "status": "DUPLICATE_SUSPECTED",
+  "verification_status": "DUPLICATE_SUSPECTED",
+  "embedding_status": "SKIPPED_DUPLICATE",
+  "model": "mock-v1",
+  "dimension": 128,
+  "max_similarity_score": 0.99782,
+  "top_match": {
+    "dog_id": "existing-dog-id",
+    "similarity_score": 0.99782,
+    "breed": "말티즈",
+    "nose_image_url": "/files/dogs/existing-dog-id/nose/..."
+  },
+  "message": "기존 등록견과 동일 개체로 의심되어 등록이 제한됩니다."
 }
 
 Response 400: 입력값 오류
-Response 422: 이미지 처리 실패 (임베딩 서비스 오류)
+Response 404: user_id 미존재
+Response 422: 이미지/임베딩 입력 오류 (Python 400)
+Response 503: 임베딩 서비스/Qdrant 연동 실패
 ```
 
 ---
