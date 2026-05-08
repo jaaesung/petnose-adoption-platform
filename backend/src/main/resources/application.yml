@@ -51,6 +51,8 @@ management:
 
 embed:
   url: ${PYTHON_EMBED_URL:http://localhost:8000}
+  connect-timeout-ms: ${PYTHON_EMBED_CONNECT_TIMEOUT_MS:3000}
+  response-timeout-ms: ${PYTHON_EMBED_RESPONSE_TIMEOUT_MS:10000}
 
 qdrant:
   host: ${QDRANT_HOST:qdrant}
@@ -58,9 +60,16 @@ qdrant:
   collection: ${QDRANT_COLLECTION:dog_nose_embeddings}
   vector-dimension: ${QDRANT_VECTOR_DIM:128}
   distance: ${QDRANT_DISTANCE:Cosine}
+  search-top-k: ${QDRANT_SEARCH_TOP_K:5}
+  search-score-threshold: ${QDRANT_SEARCH_SCORE_THRESHOLD:0.95}
+  search-timeout-ms: ${QDRANT_SEARCH_TIMEOUT_MS:3000}
+  upsert-timeout-ms: ${QDRANT_UPSERT_TIMEOUT_MS:3000}
 
 upload:
   base-path: ${UPLOAD_BASE_PATH:/var/uploads}
+
+nose:
+  duplicate-threshold: ${NOSE_DUPLICATE_THRESHOLD:0.95}
 
 logging:
   level:

@@ -1,0 +1,19 @@
+# Optional override for real embedding model mode.
+# Usage example:
+#   docker compose --env-file infra/docker/.env \
+#     -f infra/docker/compose.yaml \
+#     -f infra/docker/compose.dev.yaml \
+#     -f infra/docker/compose.real-model.yaml \
+#     up -d --build
+
+services:
+  python-embed:
+    build:
+      args:
+        INSTALL_REAL_MODEL_DEPS: ${PYTHON_EMBED_INSTALL_REAL_DEPS:-1}
+    environment:
+      EMBED_MODEL: ${EMBED_MODEL:-dog-nose-identification2}
+      EMBED_DEVICE: ${EMBED_DEVICE:-cpu}
+      DOG_NOSE_MODEL_DIR: /models/dog_nose_identification2
+    volumes:
+      - ${DOG_NOSE_MODEL_DIR_HOST:-../../../dog_nose_identification2/dog_nose_identification2}:/models/dog_nose_identification2:ro
