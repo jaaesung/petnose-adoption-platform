@@ -1,5 +1,6 @@
 package com.petnose.api.domain.entity;
 
+import com.petnose.api.domain.enums.UserRole;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -24,8 +25,18 @@ public class User {
     @Column(name = "password_hash", nullable = false, length = 255)
     private String passwordHash;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
-    private String role;
+    private UserRole role = UserRole.USER;
+
+    @Column(name = "display_name", length = 100)
+    private String displayName;
+
+    @Column(name = "contact_phone", length = 50)
+    private String contactPhone;
+
+    @Column(length = 100)
+    private String region;
 
     @Column(name = "is_active", nullable = false)
     private boolean active = true;
@@ -33,18 +44,8 @@ public class User {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
-
     @PrePersist
     public void prePersist() {
-        Instant now = Instant.now();
-        this.createdAt = now;
-        this.updatedAt = now;
-    }
-
-    @PreUpdate
-    public void preUpdate() {
-        this.updatedAt = Instant.now();
+        this.createdAt = Instant.now();
     }
 }

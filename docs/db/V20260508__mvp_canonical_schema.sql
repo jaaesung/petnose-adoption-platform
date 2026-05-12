@@ -1,10 +1,10 @@
 -- =============================================================================
--- V1__baseline.sql
--- PetNose MVP simplified canonical baseline v2
+-- V20260508__mvp_canonical_schema.sql
+-- PetNose MVP simplified canonical clean schema v2
 --
--- Clean dev reset baseline. This migration intentionally creates only the
--- simplified MVP domain tables. MySQL is the source of truth; Qdrant stores
--- dog nose vectors only, using dogs.id as the point id.
+-- Documentation-only clean schema. Do not place this file in the backend Flyway
+-- migration directory as-is. MySQL is the source of truth; Qdrant is a vector
+-- search index only.
 -- =============================================================================
 
 CREATE TABLE users (

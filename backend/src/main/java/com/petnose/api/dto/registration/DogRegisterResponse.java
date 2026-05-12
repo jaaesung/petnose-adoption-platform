@@ -23,6 +23,8 @@ public record DogRegisterResponse(
         Double maxSimilarityScore,
         @JsonProperty("nose_image_url")
         String noseImageUrl,
+        @JsonProperty("profile_image_url")
+        String profileImageUrl,
         @JsonProperty("top_match")
         DuplicateCandidateResponse topMatch,
         @JsonProperty("message")
