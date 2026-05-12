@@ -71,6 +71,11 @@ upload:
 nose:
   duplicate-threshold: ${NOSE_DUPLICATE_THRESHOLD:0.95}
 
+auth:
+  jwt:
+    secret: ${AUTH_JWT_SECRET:petnose-local-dev-jwt-secret-change-me-32bytes}
+    access-token-ttl-seconds: ${AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS:3600}
+
 logging:
   level:
     com.petnose: DEBUG

@@ -30,6 +30,11 @@ qdrant:
 upload:
   base-path: /tmp/uploads-test
 
+auth:
+  jwt:
+    secret: test-petnose-jwt-secret-change-me-32bytes
+    access-token-ttl-seconds: 3600
+
 logging:
   level:
     com.petnose: WARN
