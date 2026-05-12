@@ -2,6 +2,8 @@ package com.petnose.api.controller;
 
 import com.petnose.api.dto.adoption.AdoptionPostCreateRequest;
 import com.petnose.api.dto.adoption.AdoptionPostCreateResponse;
+import com.petnose.api.dto.adoption.AdoptionPostDetailResponse;
+import com.petnose.api.dto.adoption.AdoptionPostListResponse;
 import com.petnose.api.service.AdoptionPostService;
 import com.petnose.api.service.AuthService;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +19,20 @@ public class AdoptionPostController {
 
     private final AuthService authService;
     private final AdoptionPostService adoptionPostService;
+
+    @GetMapping
+    public AdoptionPostListResponse list(
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size
+    ) {
+        return adoptionPostService.findPublicPosts(status, page, size);
+    }
+
+    @GetMapping("/{post_id}")
+    public AdoptionPostDetailResponse detail(@PathVariable("post_id") Long postId) {
+        return adoptionPostService.findPublicPost(postId);
+    }
 
     @PostMapping
     public ResponseEntity<AdoptionPostCreateResponse> create(

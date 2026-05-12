@@ -5,26 +5,41 @@ import com.petnose.api.domain.entity.Dog;
 import com.petnose.api.domain.entity.User;
 import com.petnose.api.domain.entity.VerificationLog;
 import com.petnose.api.domain.enums.AdoptionPostStatus;
+import com.petnose.api.domain.enums.DogImageType;
 import com.petnose.api.domain.enums.DogStatus;
 import com.petnose.api.domain.enums.VerificationResult;
 import com.petnose.api.dto.adoption.AdoptionPostCreateRequest;
 import com.petnose.api.dto.adoption.AdoptionPostCreateResponse;
+import com.petnose.api.dto.adoption.AdoptionPostDetailResponse;
+import com.petnose.api.dto.adoption.AdoptionPostListItemResponse;
+import com.petnose.api.dto.adoption.AdoptionPostListResponse;
 import com.petnose.api.exception.ApiException;
 import com.petnose.api.repository.AdoptionPostRepository;
+import com.petnose.api.repository.DogImageRepository;
 import com.petnose.api.repository.DogRepository;
 import com.petnose.api.repository.UserRepository;
 import com.petnose.api.repository.VerificationLogRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class AdoptionPostService {
+
+    private static final int MAX_PUBLIC_PAGE_SIZE = 100;
 
     private static final List<AdoptionPostStatus> ACTIVE_STATUSES = List.of(
             AdoptionPostStatus.DRAFT,
@@ -35,7 +50,37 @@ public class AdoptionPostService {
     private final UserRepository userRepository;
     private final DogRepository dogRepository;
     private final VerificationLogRepository verificationLogRepository;
+    private final DogImageRepository dogImageRepository;
     private final AdoptionPostRepository adoptionPostRepository;
+
+    @Transactional(readOnly = true)
+    public AdoptionPostListResponse findPublicPosts(String statusParam, int page, int size) {
+        validatePageRequest(page, size);
+        AdoptionPostStatus status = AdoptionPostStatus.fromPublicQuery(statusParam);
+
+        Page<AdoptionPost> posts = adoptionPostRepository.findPublicPageByStatus(
+                status,
+                PageRequest.of(page, size)
+        );
+        PublicPostContext context = loadPublicPostContext(posts.getContent());
+        List<AdoptionPostListItemResponse> items = posts.getContent().stream()
+                .map(post -> toListItemResponse(post, context))
+                .toList();
+
+        return new AdoptionPostListResponse(items, page, size, posts.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
+    public AdoptionPostDetailResponse findPublicPost(Long postId) {
+        AdoptionPost post = adoptionPostRepository.findById(postId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "POST_NOT_FOUND", "Adoption post was not found."));
+        if (!post.getStatus().isPublicVisible()) {
+            throw new ApiException(HttpStatus.NOT_FOUND, "POST_NOT_PUBLIC", "Adoption post is not public.");
+        }
+
+        PublicPostContext context = loadPublicPostContext(List.of(post));
+        return toDetailResponse(post, context);
+    }
 
     @Transactional
     public AdoptionPostCreateResponse create(Long currentUserId, AdoptionPostCreateRequest request) {
@@ -146,5 +191,160 @@ public class AdoptionPostService {
         if (adoptionPostRepository.existsByDogIdAndStatusIn(dogId, ACTIVE_STATUSES)) {
             throw new ApiException(HttpStatus.CONFLICT, "ACTIVE_POST_ALREADY_EXISTS", "이미 활성 분양 게시글이 있습니다.");
         }
+    }
+
+    private void validatePageRequest(int page, int size) {
+        if (page < 0 || size <= 0 || size > MAX_PUBLIC_PAGE_SIZE) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_PAGE_REQUEST",
+                    "page must be greater than or equal to 0 and size must be between 1 and 100"
+            );
+        }
+    }
+
+    private PublicPostContext loadPublicPostContext(List<AdoptionPost> posts) {
+        Set<String> dogIds = posts.stream()
+                .map(AdoptionPost::getDogId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<Long> authorUserIds = posts.stream()
+                .map(AdoptionPost::getAuthorUserId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        Map<String, Dog> dogsById = dogRepository.findAllById(dogIds).stream()
+                .collect(Collectors.toMap(Dog::getId, Function.identity()));
+        Map<Long, User> authorsById = userRepository.findAllById(authorUserIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        return new PublicPostContext(
+                dogsById,
+                authorsById,
+                loadProfileImageUrlsByDogId(dogIds),
+                loadVerificationStatusesByDogId(dogIds)
+        );
+    }
+
+    private Map<String, String> loadProfileImageUrlsByDogId(Set<String> dogIds) {
+        Map<String, String> urlsByDogId = new HashMap<>();
+        if (dogIds.isEmpty()) {
+            return urlsByDogId;
+        }
+
+        dogImageRepository.findByDogIdInAndImageTypeOrderByDogIdAscUploadedAtDescIdDesc(dogIds, DogImageType.PROFILE)
+                .forEach(image -> urlsByDogId.putIfAbsent(image.getDogId(), toFileUrl(image.getFilePath())));
+        return urlsByDogId;
+    }
+
+    private Map<String, String> loadVerificationStatusesByDogId(Set<String> dogIds) {
+        Map<String, String> statusesByDogId = new HashMap<>();
+        if (dogIds.isEmpty()) {
+            return statusesByDogId;
+        }
+
+        verificationLogRepository.findByDogIdInOrderByDogIdAscCreatedAtDescIdDesc(dogIds)
+                .forEach(log -> statusesByDogId.putIfAbsent(log.getDogId(), toPublicVerificationStatus(log.getResult())));
+        return statusesByDogId;
+    }
+
+    private AdoptionPostListItemResponse toListItemResponse(AdoptionPost post, PublicPostContext context) {
+        Dog dog = requiredDog(post, context);
+        User author = requiredAuthor(post, context);
+
+        return new AdoptionPostListItemResponse(
+                post.getId(),
+                dog.getId(),
+                post.getTitle(),
+                post.getStatus().name(),
+                dog.getName(),
+                dog.getBreed(),
+                dog.getGender() == null ? null : dog.getGender().name(),
+                dog.getBirthDate(),
+                context.profileImageUrlsByDogId().get(dog.getId()),
+                context.verificationStatusesByDogId().getOrDefault(dog.getId(), "PENDING"),
+                author.getDisplayName(),
+                author.getRegion(),
+                post.getPublishedAt(),
+                post.getCreatedAt()
+        );
+    }
+
+    private AdoptionPostDetailResponse toDetailResponse(AdoptionPost post, PublicPostContext context) {
+        Dog dog = requiredDog(post, context);
+        User author = requiredAuthor(post, context);
+
+        return new AdoptionPostDetailResponse(
+                post.getId(),
+                dog.getId(),
+                post.getTitle(),
+                post.getContent(),
+                post.getStatus().name(),
+                dog.getName(),
+                dog.getBreed(),
+                dog.getGender() == null ? null : dog.getGender().name(),
+                dog.getBirthDate(),
+                dog.getDescription(),
+                context.profileImageUrlsByDogId().get(dog.getId()),
+                context.verificationStatusesByDogId().getOrDefault(dog.getId(), "PENDING"),
+                author.getDisplayName(),
+                author.getContactPhone(),
+                author.getRegion(),
+                post.getPublishedAt(),
+                post.getCreatedAt(),
+                post.getUpdatedAt()
+        );
+    }
+
+    private Dog requiredDog(AdoptionPost post, PublicPostContext context) {
+        Dog dog = context.dogsById().get(post.getDogId());
+        if (dog == null) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "POST_DATA_INTEGRITY_ERROR", "Post dog data is missing.");
+        }
+        return dog;
+    }
+
+    private User requiredAuthor(AdoptionPost post, PublicPostContext context) {
+        User author = context.authorsById().get(post.getAuthorUserId());
+        if (author == null) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "POST_DATA_INTEGRITY_ERROR", "Post author data is missing.");
+        }
+        return author;
+    }
+
+    private String toFileUrl(String filePath) {
+        if (filePath == null || filePath.isBlank()) {
+            return null;
+        }
+
+        String normalized = filePath.trim().replace('\\', '/');
+        if (normalized.startsWith("/files/")) {
+            return normalized;
+        }
+        if (normalized.startsWith("files/")) {
+            return "/" + normalized;
+        }
+        if (normalized.startsWith("/")) {
+            return "/files" + normalized;
+        }
+        return "/files/" + normalized;
+    }
+
+    private String toPublicVerificationStatus(VerificationResult result) {
+        if (result == null) {
+            return "PENDING";
+        }
+        return switch (result) {
+            case PASSED -> "VERIFIED";
+            case DUPLICATE_SUSPECTED -> "DUPLICATE_SUSPECTED";
+            case PENDING -> "PENDING";
+            case EMBED_FAILED, QDRANT_SEARCH_FAILED, QDRANT_UPSERT_FAILED -> "FAILED";
+        };
+    }
+
+    private record PublicPostContext(
+            Map<String, Dog> dogsById,
+            Map<Long, User> authorsById,
+            Map<String, String> profileImageUrlsByDogId,
+            Map<String, String> verificationStatusesByDogId
+    ) {
     }
 }
