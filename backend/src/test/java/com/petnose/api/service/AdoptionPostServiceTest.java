@@ -10,6 +10,7 @@ import com.petnose.api.domain.enums.VerificationResult;
 import com.petnose.api.dto.adoption.AdoptionPostCreateRequest;
 import com.petnose.api.exception.ApiException;
 import com.petnose.api.repository.AdoptionPostRepository;
+import com.petnose.api.repository.DogImageRepository;
 import com.petnose.api.repository.DogRepository;
 import com.petnose.api.repository.UserRepository;
 import com.petnose.api.repository.VerificationLogRepository;
@@ -41,6 +42,9 @@ class AdoptionPostServiceTest {
 
     @Mock
     private VerificationLogRepository verificationLogRepository;
+
+    @Mock
+    private DogImageRepository dogImageRepository;
 
     @Mock
     private AdoptionPostRepository adoptionPostRepository;
