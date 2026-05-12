@@ -14,10 +14,10 @@ public record RegisterRequest(
         @Size(min = 8, max = 255)
         String password,
         @JsonProperty("display_name")
-        @Size(max = 100)
+        @Size(max = 150)
         String displayName,
         @JsonProperty("contact_phone")
-        @Size(max = 50)
+        @Size(max = 30)
         String contactPhone,
         @JsonProperty("region")
         @Size(max = 100)
