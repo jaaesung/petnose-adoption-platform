@@ -26,7 +26,7 @@ public class DogImage {
     @Column(name = "image_type", nullable = false, length = 20)
     private DogImageType imageType;
 
-    @Column(name = "file_path", nullable = false, length = 1000)
+    @Column(name = "file_path", length = 500, nullable = false, unique = true)
     private String filePath;
 
     @Column(name = "mime_type", length = 100)

@@ -1,0 +1,109 @@
+Project petnose_mvp {
+  database_type: "MySQL"
+  Note: "PetNose MVP simplified canonical schema v2. MySQL is source of truth; Qdrant stores vectors only."
+}
+
+Enum user_role {
+  USER
+  ADMIN
+}
+
+Enum dog_gender {
+  MALE
+  FEMALE
+  UNKNOWN
+}
+
+Enum dog_status {
+  PENDING
+  REGISTERED
+  DUPLICATE_SUSPECTED
+  REJECTED
+  ADOPTED
+  INACTIVE
+}
+
+Enum dog_image_type {
+  NOSE
+  PROFILE
+}
+
+Enum verification_result {
+  PENDING
+  PASSED
+  DUPLICATE_SUSPECTED
+  EMBED_FAILED
+  QDRANT_SEARCH_FAILED
+  QDRANT_UPSERT_FAILED
+}
+
+Enum adoption_post_status {
+  DRAFT
+  OPEN
+  RESERVED
+  COMPLETED
+  CLOSED
+}
+
+Table users {
+  id bigint [pk, increment]
+  email varchar(255) [not null, unique]
+  password_hash varchar(255) [not null]
+  role user_role [not null, default: "USER"]
+  display_name varchar(150) [note: "Nullable. Required before adoption post creation."]
+  contact_phone varchar(30)
+  region varchar(100)
+  is_active boolean [not null, default: true]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table dogs {
+  id char(36) [pk, note: "UUID string. Also used as Qdrant point id."]
+  owner_user_id bigint [not null, ref: > users.id]
+  name varchar(100) [not null]
+  breed varchar(100)
+  gender dog_gender
+  birth_date date
+  description text
+  status dog_status [not null, default: "PENDING"]
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table dog_images {
+  id bigint [pk, increment]
+  dog_id char(36) [not null, ref: > dogs.id]
+  image_type dog_image_type [not null]
+  file_path varchar(500) [not null, unique, note: "Relative path under the upload root."]
+  mime_type varchar(100)
+  file_size bigint
+  sha256 char(64)
+  uploaded_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table verification_logs {
+  id bigint [pk, increment]
+  dog_id char(36) [not null, ref: > dogs.id]
+  dog_image_id bigint [not null, ref: > dog_images.id]
+  requested_by_user_id bigint [not null, ref: > users.id]
+  result verification_result [not null]
+  similarity_score decimal(6,5)
+  candidate_dog_id char(36) [ref: > dogs.id]
+  model varchar(100)
+  dimension int
+  failure_reason varchar(1000)
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}
+
+Table adoption_posts {
+  id bigint [pk, increment]
+  author_user_id bigint [not null, ref: > users.id]
+  dog_id char(36) [not null, ref: > dogs.id]
+  title varchar(255) [not null]
+  content text
+  status adoption_post_status [not null, default: "DRAFT"]
+  published_at timestamp
+  closed_at timestamp
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+}

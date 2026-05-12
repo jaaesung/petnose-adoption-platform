@@ -25,6 +25,7 @@ dependencies {
     // Web
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.boot:spring-boot-starter-validation")
 
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -32,6 +33,9 @@ dependencies {
     // JPA + MySQL
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     runtimeOnly("com.mysql:mysql-connector-j")
+
+    // Password hashing
+    implementation("org.springframework.security:spring-security-crypto")
 
     // Flyway — Spring Boot 3.2.x 는 Flyway 10.x 를 관리함
     // MySQL 지원은 flyway-mysql 별도 모듈 필요 (Flyway 10 부터 분리됨)
