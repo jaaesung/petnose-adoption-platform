@@ -8,6 +8,8 @@ public record DuplicateCandidateResponse(
         @JsonProperty("similarity_score")
         Double similarityScore,
         @JsonProperty("breed")
-        String breed
+        String breed,
+        @JsonProperty("nose_image_url")
+        String noseImageUrl
 ) {
 }
