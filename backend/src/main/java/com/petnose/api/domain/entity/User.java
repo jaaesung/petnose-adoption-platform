@@ -29,10 +29,10 @@ public class User {
     @Column(nullable = false, length = 20)
     private UserRole role = UserRole.USER;
 
-    @Column(name = "display_name", length = 100)
+    @Column(name = "display_name", length = 150)
     private String displayName;
 
-    @Column(name = "contact_phone", length = 50)
+    @Column(name = "contact_phone", length = 30)
     private String contactPhone;
 
     @Column(length = 100)

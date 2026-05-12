@@ -2,6 +2,7 @@ package com.petnose.api.controller;
 
 import com.petnose.api.dto.registration.DogRegisterResponse;
 import com.petnose.api.exception.ApiException;
+import com.petnose.api.service.AuthService;
 import com.petnose.api.service.DogRegistrationService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -25,6 +26,9 @@ class DogRegistrationControllerTest {
 
     @MockBean
     private DogRegistrationService dogRegistrationService;
+
+    @MockBean
+    private AuthService authService;
 
     @Test
     void registerDogReturnsCreatedWhenRegistrationAllowed() throws Exception {
