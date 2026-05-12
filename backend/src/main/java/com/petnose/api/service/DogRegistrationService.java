@@ -83,15 +83,21 @@ public class DogRegistrationService {
             transactionTemplate.executeWithoutResult(status ->
                     markAsDuplicateSuspected(pending, embedResponse, decision)
             );
-            return buildDuplicateResponse(pending, embedResponse, decision);
+            return buildDuplicateResponse(pending, embedResponse, decision, profileStored == null ? null : profileStored.relativePath());
         }
 
-        upsertToQdrantOrFail(pending, request, embedResponse, noseStored.relativePath(), decision.maxScore());
+        upsertToQdrantOrFail(pending, request, embedResponse, noseStored.relativePath());
 
         transactionTemplate.executeWithoutResult(status ->
                 markAsRegistered(pending, embedResponse, decision.maxScore())
         );
-        return buildRegisteredResponse(pending, embedResponse, decision.maxScore(), noseStored.relativePath());
+        return buildRegisteredResponse(
+                pending,
+                embedResponse,
+                decision.maxScore(),
+                noseStored.relativePath(),
+                profileStored == null ? null : profileStored.relativePath()
+        );
     }
 
     private PendingRegistration createPendingRows(
@@ -111,8 +117,6 @@ public class DogRegistrationService {
         dog.setBirthDate(birthDate);
         dog.setDescription(blankToNull(request.description()));
         dog.setStatus(DogStatus.PENDING);
-        dog.setNoseVerificationStatus(NoseVerificationStatus.PENDING);
-        dog.setEmbeddingStatus(EmbeddingStatus.PENDING);
         dogRepository.save(dog);
 
         DogImage noseImage = buildDogImage(dogId, DogImageType.NOSE, noseStored);
@@ -154,8 +158,6 @@ public class DogRegistrationService {
                     markAsFailed(
                             pending,
                             VerificationResult.EMBED_FAILED,
-                            NoseVerificationStatus.FAILED,
-                            EmbeddingStatus.FAILED,
                             null,
                             null,
                             "embed 실패: " + e.getMessage()
@@ -175,8 +177,6 @@ public class DogRegistrationService {
                     markAsFailed(
                             pending,
                             VerificationResult.EMBED_FAILED,
-                            NoseVerificationStatus.FAILED,
-                            EmbeddingStatus.FAILED,
                             null,
                             null,
                             "embed vector가 비어 있습니다."
@@ -189,8 +189,6 @@ public class DogRegistrationService {
                     markAsFailed(
                             pending,
                             VerificationResult.EMBED_FAILED,
-                            NoseVerificationStatus.FAILED,
-                            EmbeddingStatus.FAILED,
                             embedResponse.model(),
                             embedResponse.dimension(),
                             "dimension mismatch: expected=%d actual=%d".formatted(expectedVectorDimension, embedResponse.dimension())
@@ -210,8 +208,6 @@ public class DogRegistrationService {
                     markAsFailed(
                             pending,
                             VerificationResult.QDRANT_SEARCH_FAILED,
-                            NoseVerificationStatus.FAILED,
-                            EmbeddingStatus.FAILED,
                             embedResponse.model(),
                             embedResponse.dimension(),
                             "qdrant search 실패: " + e.getMessage()
@@ -225,8 +221,7 @@ public class DogRegistrationService {
             PendingRegistration pending,
             DogRegisterRequest request,
             EmbedClient.EmbedResponse embedResponse,
-            String noseImagePath,
-            double maxScore
+            String noseImagePath
     ) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("dog_id", pending.dogId());
@@ -245,16 +240,10 @@ public class DogRegistrationService {
                 markAsFailed(
                         pending,
                         VerificationResult.QDRANT_UPSERT_FAILED,
-                        NoseVerificationStatus.VERIFIED,
-                        EmbeddingStatus.QDRANT_SYNC_FAILED,
                         embedResponse.model(),
                         embedResponse.dimension(),
                         "qdrant upsert 실패: " + e.getMessage()
                 );
-                Dog dog = getDogOrThrow(pending.dogId());
-                dog.setStatus(DogStatus.REGISTERED);
-                dog.setDuplicateSimilarityScore(toScore(maxScore));
-                dogRepository.save(dog);
             });
             // TODO: 재처리 배치(qdrant_sync_jobs 등) 도입 시 QDRANT_SYNC_FAILED 건을 자동 재시도하도록 확장.
             throw new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "QDRANT_UPSERT_FAILED", "벡터 인덱스 동기화에 실패했습니다.");
@@ -268,12 +257,6 @@ public class DogRegistrationService {
     ) {
         Dog dog = getDogOrThrow(pending.dogId());
         dog.setStatus(DogStatus.DUPLICATE_SUSPECTED);
-        dog.setNoseVerificationStatus(NoseVerificationStatus.DUPLICATE_SUSPECTED);
-        dog.setEmbeddingStatus(EmbeddingStatus.SKIPPED_DUPLICATE);
-        dog.setDuplicateSimilarityScore(toScore(decision.maxScore()));
-        dog.setEmbeddingModel(embedResponse.model());
-        dog.setEmbeddingDimension(embedResponse.dimension());
-        dog.setDuplicateCandidateDogId(decision.topMatch() != null ? decision.topMatch().dogId() : null);
         dogRepository.save(dog);
 
         VerificationLog logEntity = getVerificationLogOrThrow(pending.verificationLogId());
@@ -288,13 +271,6 @@ public class DogRegistrationService {
     private void markAsRegistered(PendingRegistration pending, EmbedClient.EmbedResponse embedResponse, double maxScore) {
         Dog dog = getDogOrThrow(pending.dogId());
         dog.setStatus(DogStatus.REGISTERED);
-        dog.setNoseVerificationStatus(NoseVerificationStatus.VERIFIED);
-        dog.setEmbeddingStatus(EmbeddingStatus.COMPLETED);
-        dog.setQdrantPointId(pending.dogId());
-        dog.setDuplicateSimilarityScore(toScore(maxScore));
-        dog.setEmbeddingModel(embedResponse.model());
-        dog.setEmbeddingDimension(embedResponse.dimension());
-        dog.setVerifiedAt(Instant.now());
         dogRepository.save(dog);
 
         VerificationLog logEntity = getVerificationLogOrThrow(pending.verificationLogId());
@@ -308,18 +284,12 @@ public class DogRegistrationService {
     private void markAsFailed(
             PendingRegistration pending,
             VerificationResult verificationResult,
-            NoseVerificationStatus noseVerificationStatus,
-            EmbeddingStatus embeddingStatus,
             String model,
             Integer dimension,
             String failureReason
     ) {
         Dog dog = getDogOrThrow(pending.dogId());
         dog.setStatus(DogStatus.REJECTED);
-        dog.setNoseVerificationStatus(noseVerificationStatus);
-        dog.setEmbeddingStatus(embeddingStatus);
-        dog.setEmbeddingModel(model);
-        dog.setEmbeddingDimension(dimension);
         dogRepository.save(dog);
 
         VerificationLog logEntity = getVerificationLogOrThrow(pending.verificationLogId());
@@ -334,19 +304,22 @@ public class DogRegistrationService {
             PendingRegistration pending,
             EmbedClient.EmbedResponse embedResponse,
             double maxScore,
-            String noseImageRelativePath
+            String noseImageRelativePath,
+            String profileImageRelativePath
     ) {
+        VerificationResult result = VerificationResult.PASSED;
         return new DogRegisterResponse(
                 pending.dogId(),
                 true,
                 DogStatus.REGISTERED.name(),
-                NoseVerificationStatus.VERIFIED.name(),
-                EmbeddingStatus.COMPLETED.name(),
+                toVerificationStatus(result),
+                toEmbeddingStatus(result),
                 pending.dogId(),
                 embedResponse.model(),
                 embedResponse.dimension(),
                 maxScore,
                 fileStorageService.toPublicUrl(noseImageRelativePath),
+                toPublicUrlOrNull(profileImageRelativePath),
                 null,
                 "중복 의심 개체가 없어 등록이 완료되었습니다."
         );
@@ -355,7 +328,8 @@ public class DogRegistrationService {
     private DogRegisterResponse buildDuplicateResponse(
             PendingRegistration pending,
             EmbedClient.EmbedResponse embedResponse,
-            NoseVerificationPolicy.VerificationDecision decision
+            NoseVerificationPolicy.VerificationDecision decision,
+            String profileImageRelativePath
     ) {
         DuplicateCandidateResponse topMatch = null;
         if (decision.topMatch() != null) {
@@ -363,25 +337,49 @@ public class DogRegistrationService {
             topMatch = new DuplicateCandidateResponse(
                     t.dogId(),
                     t.score(),
-                    t.breed(),
-                    t.noseImagePath() == null ? null : fileStorageService.toPublicUrl(t.noseImagePath())
+                    t.breed()
             );
         }
 
+        VerificationResult result = VerificationResult.DUPLICATE_SUSPECTED;
         return new DogRegisterResponse(
                 pending.dogId(),
                 false,
                 DogStatus.DUPLICATE_SUSPECTED.name(),
-                NoseVerificationStatus.DUPLICATE_SUSPECTED.name(),
-                EmbeddingStatus.SKIPPED_DUPLICATE.name(),
+                toVerificationStatus(result),
+                toEmbeddingStatus(result),
                 null,
                 embedResponse.model(),
                 embedResponse.dimension(),
                 decision.maxScore(),
                 fileStorageService.toPublicUrl(getNoseImagePath(pending.noseImageId())),
+                toPublicUrlOrNull(profileImageRelativePath),
                 topMatch,
                 "기존 등록견과 동일 개체로 의심되어 등록이 제한됩니다."
         );
+    }
+
+    private String toVerificationStatus(VerificationResult result) {
+        return switch (result) {
+            case PASSED -> "VERIFIED";
+            case DUPLICATE_SUSPECTED -> "DUPLICATE_SUSPECTED";
+            case PENDING -> "PENDING";
+            case EMBED_FAILED, QDRANT_SEARCH_FAILED, QDRANT_UPSERT_FAILED -> "FAILED";
+        };
+    }
+
+    private String toEmbeddingStatus(VerificationResult result) {
+        return switch (result) {
+            case PASSED -> "COMPLETED";
+            case DUPLICATE_SUSPECTED -> "SKIPPED_DUPLICATE";
+            case PENDING -> "PENDING";
+            case EMBED_FAILED, QDRANT_SEARCH_FAILED -> "FAILED";
+            case QDRANT_UPSERT_FAILED -> "QDRANT_SYNC_FAILED";
+        };
+    }
+
+    private String toPublicUrlOrNull(String relativePath) {
+        return relativePath == null ? null : fileStorageService.toPublicUrl(relativePath);
     }
 
     private String getNoseImagePath(Long noseImageId) {
