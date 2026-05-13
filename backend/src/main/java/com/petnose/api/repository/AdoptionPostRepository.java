@@ -9,10 +9,16 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
+import java.util.List;
 
 public interface AdoptionPostRepository extends JpaRepository<AdoptionPost, Long> {
 
     boolean existsByDogIdAndStatusIn(String dogId, Collection<AdoptionPostStatus> statuses);
+
+    List<AdoptionPost> findByDogIdInAndStatusInOrderByDogIdAscCreatedAtDescIdDesc(
+            Collection<String> dogIds,
+            Collection<AdoptionPostStatus> statuses
+    );
 
     @Query(
             value = """
