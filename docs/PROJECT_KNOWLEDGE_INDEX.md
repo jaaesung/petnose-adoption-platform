@@ -34,6 +34,21 @@ The existing real-model `/api/dogs/register` pipeline remains the behavior to pr
 
 Response fields `qdrant_point_id`, `verification_status`, and `embedding_status` are API-calculated fields. They are not stored as columns on `dogs` in the canonical v2 schema.
 
+## Current Flutter API Flow
+
+The current Flutter MVP flow is documented in `docs/PETNOSE_MVP_API_CONTRACT.md` and is implemented for:
+
+- `POST /api/dogs/register`
+- `GET /api/users/me`
+- `PATCH /api/users/me/profile`
+- `POST /api/adoption-posts`
+- `GET /api/adoption-posts`
+- `GET /api/adoption-posts/{post_id}`
+
+Public adoption post list/detail responses must not expose `nose_image_url`. Dog registration is owner-scoped and may return the newly submitted dog's own `nose_image_url`; `top_match` must never include a raw nose image URL.
+
+`POST /api/dogs/register` currently prefers JWT principal ownership at the controller boundary but keeps the temporary local/dev `user_id` fallback. Removing that fallback before production hardening is a follow-up, not part of broad service changes in the Flutter contract branch.
+
 ## Removed Scope
 
 Former profile, auth history, report, token, Firebase, chat, and dog image quality/crop extension areas are outside the current canonical MVP v2 table and API set.
