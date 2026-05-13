@@ -1,6 +1,9 @@
 package com.petnose.api.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.petnose.api.dto.registration.DogRegisterResponse;
+import com.petnose.api.dto.registration.DuplicateCandidateResponse;
 import com.petnose.api.exception.ApiException;
 import com.petnose.api.service.AuthService;
 import com.petnose.api.service.DogRegistrationService;
@@ -12,7 +15,11 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +30,9 @@ class DogRegistrationControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @MockBean
     private DogRegistrationService dogRegistrationService;
@@ -49,13 +59,43 @@ class DogRegistrationControllerTest {
                         "registered"
                 ));
 
-        mockMvc.perform(validMultipartRequest())
+        MvcResult result = mockMvc.perform(validMultipartRequest())
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.dog_id").value("dog-1"))
                 .andExpect(jsonPath("$.registration_allowed").value(true))
                 .andExpect(jsonPath("$.status").value("REGISTERED"))
                 .andExpect(jsonPath("$.verification_status").value("VERIFIED"))
                 .andExpect(jsonPath("$.embedding_status").value("COMPLETED"))
-                .andExpect(jsonPath("$.qdrant_point_id").value("dog-1"));
+                .andExpect(jsonPath("$.qdrant_point_id").value("dog-1"))
+                .andExpect(jsonPath("$.model").value("dog-nose-identification2:s101_224"))
+                .andExpect(jsonPath("$.dimension").value(2048))
+                .andExpect(jsonPath("$.max_similarity_score").value(0.12345))
+                .andExpect(jsonPath("$.nose_image_url").value("/files/dogs/dog-1/nose/sample.png"))
+                .andExpect(jsonPath("$.profile_image_url").value("/files/dogs/dog-1/profile/sample.png"))
+                .andExpect(jsonPath("$.top_match").doesNotExist())
+                .andExpect(jsonPath("$.message").value("registered"))
+                .andExpect(jsonPath("$.dogId").doesNotExist())
+                .andExpect(jsonPath("$.registrationAllowed").doesNotExist())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(responseBody(result));
+        assertThat(body.fieldNames())
+                .toIterable()
+                .containsExactly(
+                        "dog_id",
+                        "registration_allowed",
+                        "status",
+                        "verification_status",
+                        "embedding_status",
+                        "qdrant_point_id",
+                        "model",
+                        "dimension",
+                        "max_similarity_score",
+                        "nose_image_url",
+                        "profile_image_url",
+                        "top_match",
+                        "message"
+                );
     }
 
     @Test
@@ -73,17 +113,38 @@ class DogRegistrationControllerTest {
                         0.98765,
                         "/files/dogs/dog-2/nose/sample.png",
                         null,
-                        null,
+                        new DuplicateCandidateResponse("existing-dog-1", 0.98765, "Jindo"),
                         "duplicate suspected"
                 ));
 
-        mockMvc.perform(validMultipartRequest())
+        MvcResult result = mockMvc.perform(validMultipartRequest())
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.dog_id").value("dog-2"))
                 .andExpect(jsonPath("$.registration_allowed").value(false))
                 .andExpect(jsonPath("$.status").value("DUPLICATE_SUSPECTED"))
                 .andExpect(jsonPath("$.verification_status").value("DUPLICATE_SUSPECTED"))
                 .andExpect(jsonPath("$.embedding_status").value("SKIPPED_DUPLICATE"))
-                .andExpect(jsonPath("$.qdrant_point_id").doesNotExist());
+                .andExpect(jsonPath("$.qdrant_point_id").doesNotExist())
+                .andExpect(jsonPath("$.model").value("dog-nose-identification2:s101_224"))
+                .andExpect(jsonPath("$.dimension").value(2048))
+                .andExpect(jsonPath("$.max_similarity_score").value(0.98765))
+                .andExpect(jsonPath("$.nose_image_url").value("/files/dogs/dog-2/nose/sample.png"))
+                .andExpect(jsonPath("$.profile_image_url").doesNotExist())
+                .andExpect(jsonPath("$.top_match.dog_id").value("existing-dog-1"))
+                .andExpect(jsonPath("$.top_match.similarity_score").value(0.98765))
+                .andExpect(jsonPath("$.top_match.breed").value("Jindo"))
+                .andExpect(jsonPath("$.top_match.nose_image_url").doesNotExist())
+                .andExpect(jsonPath("$.message").value("duplicate suspected"))
+                .andExpect(jsonPath("$.topMatch").doesNotExist())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(responseBody(result));
+        assertThat(body.has("qdrant_point_id")).isTrue();
+        assertThat(body.get("qdrant_point_id").isNull()).isTrue();
+        assertThat(body.get("top_match").fieldNames())
+                .toIterable()
+                .containsExactly("dog_id", "similarity_score", "breed");
+        assertThat(body.get("top_match").has("nose_image_url")).isFalse();
     }
 
     @Test
@@ -114,5 +175,9 @@ class DogRegistrationControllerTest {
                 .param("gender", "MALE")
                 .param("birth_date", "2024-01-01")
                 .param("description", "friendly");
+    }
+
+    private String responseBody(MvcResult result) {
+        return new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
     }
 }

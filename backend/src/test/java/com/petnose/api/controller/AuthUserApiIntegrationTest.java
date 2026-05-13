@@ -119,6 +119,30 @@ class AuthUserApiIntegrationTest {
     }
 
     @Test
+    void meKeepsNullableProfileFieldKeysForFlutterFlow() throws Exception {
+        register("me-null-profile@example.com", "password123", null, null, null);
+        String accessToken = loginAccessToken("me-null-profile@example.com", "password123");
+
+        MvcResult result = mockMvc.perform(get("/api/users/me")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.user_id").exists())
+                .andExpect(jsonPath("$.email").value("me-null-profile@example.com"))
+                .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.is_active").value(true))
+                .andExpect(jsonPath("$.created_at").doesNotExist())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(responseBody(result));
+        assertThat(body.fieldNames())
+                .toIterable()
+                .containsExactly("user_id", "email", "role", "display_name", "contact_phone", "region", "is_active");
+        assertThat(body.get("display_name").isNull()).isTrue();
+        assertThat(body.get("contact_phone").isNull()).isTrue();
+        assertThat(body.get("region").isNull()).isTrue();
+    }
+
+    @Test
     void registerMissingEmailReturnsValidationFailed() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
