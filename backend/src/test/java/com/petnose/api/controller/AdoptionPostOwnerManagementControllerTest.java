@@ -197,6 +197,77 @@ class AdoptionPostOwnerManagementControllerTest {
         );
     }
 
+    @Test
+    void ownerListWithoutStatusReturnsEveryOwnedStatus() throws Exception {
+        User currentUser = saveUser("All Status Owner", true);
+        User otherUser = saveUser("Other Status Owner", true);
+        Dog currentDog = saveDog(currentUser, "AllStatusDog", DogStatus.REGISTERED);
+        Dog otherDog = saveDog(otherUser, "OtherStatusDog", DogStatus.REGISTERED);
+
+        AdoptionPost draft = savePostCreatedAt(
+                currentUser,
+                currentDog,
+                AdoptionPostStatus.DRAFT,
+                "Owned draft",
+                LocalDateTime.of(2026, 1, 1, 9, 0)
+        );
+        AdoptionPost open = savePostCreatedAt(
+                currentUser,
+                currentDog,
+                AdoptionPostStatus.OPEN,
+                "Owned open",
+                LocalDateTime.of(2026, 1, 2, 9, 0)
+        );
+        AdoptionPost reserved = savePostCreatedAt(
+                currentUser,
+                currentDog,
+                AdoptionPostStatus.RESERVED,
+                "Owned reserved",
+                LocalDateTime.of(2026, 1, 3, 9, 0)
+        );
+        AdoptionPost completed = savePostCreatedAt(
+                currentUser,
+                currentDog,
+                AdoptionPostStatus.COMPLETED,
+                "Owned completed",
+                LocalDateTime.of(2026, 1, 4, 9, 0)
+        );
+        AdoptionPost closed = savePostCreatedAt(
+                currentUser,
+                currentDog,
+                AdoptionPostStatus.CLOSED,
+                "Owned closed",
+                LocalDateTime.of(2026, 1, 5, 9, 0)
+        );
+        savePostCreatedAt(
+                otherUser,
+                otherDog,
+                AdoptionPostStatus.CLOSED,
+                "Other closed",
+                LocalDateTime.of(2026, 1, 6, 9, 0)
+        );
+
+        MvcResult result = ownerList(tokenFor(currentUser))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(5)))
+                .andExpect(jsonPath("$.total_count").value(5))
+                .andExpect(jsonPath("$.items[0].post_id").value(closed.getId()))
+                .andExpect(jsonPath("$.items[0].status").value("CLOSED"))
+                .andExpect(jsonPath("$.items[1].post_id").value(completed.getId()))
+                .andExpect(jsonPath("$.items[1].status").value("COMPLETED"))
+                .andExpect(jsonPath("$.items[2].post_id").value(reserved.getId()))
+                .andExpect(jsonPath("$.items[2].status").value("RESERVED"))
+                .andExpect(jsonPath("$.items[3].post_id").value(open.getId()))
+                .andExpect(jsonPath("$.items[3].status").value("OPEN"))
+                .andExpect(jsonPath("$.items[4].post_id").value(draft.getId()))
+                .andExpect(jsonPath("$.items[4].status").value("DRAFT"))
+                .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
+                .andReturn();
+
+        assertOwnerListItemFields(result);
+        assertThat(responseBody(result)).doesNotContain("Other closed", "nose_image_url");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"DRAFT", "OPEN", "RESERVED", "COMPLETED", "CLOSED"})
     void ownerListFiltersByAllowedStatus(String statusValue) throws Exception {
