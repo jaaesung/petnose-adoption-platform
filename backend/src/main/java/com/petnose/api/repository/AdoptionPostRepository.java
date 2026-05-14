@@ -15,6 +15,16 @@ public interface AdoptionPostRepository extends JpaRepository<AdoptionPost, Long
 
     boolean existsByDogIdAndStatusIn(String dogId, Collection<AdoptionPostStatus> statuses);
 
+    boolean existsByDogIdAndStatusInAndIdNot(String dogId, Collection<AdoptionPostStatus> statuses, Long id);
+
+    Page<AdoptionPost> findByAuthorUserIdOrderByCreatedAtDescIdDesc(Long authorUserId, Pageable pageable);
+
+    Page<AdoptionPost> findByAuthorUserIdAndStatusOrderByCreatedAtDescIdDesc(
+            Long authorUserId,
+            AdoptionPostStatus status,
+            Pageable pageable
+    );
+
     List<AdoptionPost> findByDogIdInAndStatusInOrderByDogIdAscCreatedAtDescIdDesc(
             Collection<String> dogIds,
             Collection<AdoptionPostStatus> statuses

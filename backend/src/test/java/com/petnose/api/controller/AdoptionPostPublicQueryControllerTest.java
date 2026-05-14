@@ -439,10 +439,10 @@ class AdoptionPostPublicQueryControllerTest {
     }
 
     @Test
-    void detailRouteDoesNotConsumeFutureMeEndpointSegment() throws Exception {
+    void meEndpointRequiresAuthorizationInsteadOfFallingThroughToPostDetail() throws Exception {
         mockMvc.perform(get("/api/adoption-posts/me"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"));
     }
 
     private User saveUser(String displayName, String contactPhone, String region) {
