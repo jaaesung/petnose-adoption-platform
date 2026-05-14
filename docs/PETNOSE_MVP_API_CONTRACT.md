@@ -44,6 +44,8 @@ This contract records the Flutter MVP flow against the current backend implement
 | 6 | `POST /api/adoption-posts` | Implemented | Creates `DRAFT` or `OPEN` post for verified owner dog. |
 | 7 | `GET /api/adoption-posts` | Implemented | Renders public post list without nose image. |
 | 8 | `GET /api/adoption-posts/{post_id}` | Implemented | Renders public post detail without nose image. |
+| 9 | `GET /api/adoption-posts/me` | Implemented | Lists only the current user's posts. |
+| 10 | `PATCH /api/adoption-posts/{post_id}/status` | Implemented | Owner-only post status management. |
 
 No requested Flutter-flow endpoint is currently marked as unimplemented in latest `develop`. This branch should keep any wider API expansion as a follow-up, not as new scope.
 
@@ -289,6 +291,18 @@ Contract notes:
 GET /api/adoption-posts?status=OPEN&page=0&size=20
 ```
 
+Query parameters:
+
+- `status`: optional, defaults to `OPEN`; supported values are `OPEN`, `RESERVED`, and `COMPLETED`.
+- `page`: optional, zero-based page number, defaults to `0`.
+- `size`: optional page size, defaults to `20`, maximum `100`.
+
+Public feed status display mapping:
+
+- `OPEN` = 분양가능
+- `RESERVED` = 예약중
+- `COMPLETED` = 분양완료
+
 Response `200`:
 
 ```json
@@ -321,9 +335,12 @@ Contract notes:
 
 - Public list status defaults to `OPEN`.
 - Public list accepts `OPEN`, `RESERVED`, or `COMPLETED`.
+- `DRAFT` and `CLOSED` are not valid public list statuses.
 - `verification_status` is included for Flutter display.
 - `profile_image_url` may be exposed.
 - `nose_image_url` must not be exposed.
+- Invalid `status` returns `INVALID_POST_STATUS`.
+- Invalid `page` or `size` returns `INVALID_PAGE_REQUEST`.
 
 ### Get Public Adoption Post Detail
 
@@ -362,6 +379,150 @@ Contract notes:
 - `verification_status` is included for Flutter display.
 - `profile_image_url` may be exposed.
 - `nose_image_url` must not be exposed.
+- Missing posts return `POST_NOT_FOUND`.
+- Non-public posts return `POST_NOT_PUBLIC`.
+
+### List Current User's Adoption Posts
+
+```http
+GET /api/adoption-posts/me?status=OPEN&page=0&size=20
+Authorization: Bearer <JWT>
+```
+
+Query parameters:
+
+- `status`: optional; supported values are `DRAFT`, `OPEN`, `RESERVED`, `COMPLETED`, and `CLOSED`.
+- `page`: optional, zero-based page number, defaults to `0`.
+- `size`: optional page size, defaults to `20`, maximum `100`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "post_id": 501,
+      "dog_id": "uuid",
+      "title": "말티즈 가족을 찾습니다",
+      "status": "OPEN",
+      "dog_name": "초코",
+      "breed": "말티즈",
+      "gender": "MALE",
+      "birth_date": "2024-01-01",
+      "profile_image_url": "/files/dogs/{uuid}/profile/profile.jpg",
+      "verification_status": "VERIFIED",
+      "published_at": "2026-05-13T10:00:00",
+      "closed_at": null,
+      "created_at": "2026-05-13T10:00:00",
+      "updated_at": "2026-05-13T10:00:00"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total_count": 1
+}
+```
+
+Contract notes:
+
+- Bearer JWT authorization is required.
+- The response returns only posts owned by the current user.
+- Omitting `status` returns all statuses owned by the current user.
+- `nose_image_url` must not be exposed.
+- Invalid `status` returns `INVALID_POST_STATUS`.
+- Invalid `page` or `size` returns `INVALID_PAGE_REQUEST`.
+- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
+
+### Update Adoption Post Status
+
+```http
+PATCH /api/adoption-posts/{post_id}/status
+Authorization: Bearer <JWT>
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "status": "RESERVED"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "post_id": 501,
+  "dog_id": "uuid",
+  "title": "말티즈 가족을 찾습니다",
+  "content": "상세 내용...",
+  "status": "RESERVED",
+  "published_at": "2026-05-13T10:00:00",
+  "closed_at": null,
+  "created_at": "2026-05-13T10:00:00",
+  "updated_at": "2026-05-13T10:05:00"
+}
+```
+
+Allowed transitions:
+
+- `DRAFT` -> `OPEN`
+- `DRAFT` -> `CLOSED`
+- `OPEN` -> `RESERVED`
+- `OPEN` -> `COMPLETED`
+- `OPEN` -> `CLOSED`
+- `RESERVED` -> `OPEN`
+- `RESERVED` -> `COMPLETED`
+- `RESERVED` -> `CLOSED`
+
+Contract notes:
+
+- Bearer JWT authorization is required.
+- Only the post owner may update status.
+- `COMPLETED` and `CLOSED` are terminal states.
+- `COMPLETED` sets `dogs.status` to `ADOPTED`.
+- `CLOSED` does not set `dogs.status` to `ADOPTED`.
+- Same-status PATCH is implemented as a no-op and returns the current post status response.
+- `DRAFT` -> `OPEN` validates the same publish eligibility as post creation.
+- Missing posts return `POST_NOT_FOUND`.
+- Non-owner updates return `POST_OWNER_MISMATCH`.
+- Invalid `status` returns `INVALID_POST_STATUS`.
+- Invalid transitions return `INVALID_STATUS_TRANSITION`.
+- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
+
+### Adoption Post Error Codes
+
+- `POST_NOT_FOUND`: adoption post does not exist.
+- `POST_NOT_PUBLIC`: adoption post exists but is not publicly visible.
+- `POST_OWNER_MISMATCH`: current user does not own the post.
+- `INVALID_POST_STATUS`: unsupported or malformed status value.
+- `INVALID_STATUS_TRANSITION`: requested status transition is not allowed.
+- `INVALID_PAGE_REQUEST`: page or size parameter is outside the supported range.
+- `UNAUTHORIZED`: JWT authorization is missing, malformed, invalid, expired, or resolves to no active user.
+
+### Local Verification Examples
+
+Replace `<JWT>` and `<post_id>` with local test values.
+
+```bash
+curl "http://localhost/api/adoption-posts?status=OPEN&page=0&size=20"
+curl "http://localhost/api/adoption-posts?status=RESERVED&page=0&size=20"
+curl "http://localhost/api/adoption-posts?status=COMPLETED&page=0&size=20"
+
+curl -H "Authorization: Bearer <JWT>" \
+  "http://localhost/api/adoption-posts/me?page=0&size=20"
+
+curl -X PATCH "http://localhost/api/adoption-posts/<post_id>/status" \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"RESERVED"}'
+
+curl -X PATCH "http://localhost/api/adoption-posts/<post_id>/status" \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"COMPLETED"}'
+```
 
 ## JWT Principal Follow-up
 

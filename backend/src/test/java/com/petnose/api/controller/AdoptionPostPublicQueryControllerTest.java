@@ -65,6 +65,27 @@ class AdoptionPostPublicQueryControllerTest {
             "created_at"
     );
 
+    private static final Set<String> PUBLIC_DETAIL_FIELDS = Set.of(
+            "post_id",
+            "dog_id",
+            "title",
+            "content",
+            "status",
+            "dog_name",
+            "breed",
+            "gender",
+            "birth_date",
+            "description",
+            "profile_image_url",
+            "verification_status",
+            "author_display_name",
+            "author_contact_phone",
+            "author_region",
+            "published_at",
+            "created_at",
+            "updated_at"
+    );
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -158,8 +179,8 @@ class AdoptionPostPublicQueryControllerTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"RESERVED", "COMPLETED"})
-    void listAllowsReservedAndCompletedStatus(String statusValue) throws Exception {
+    @ValueSource(strings = {"OPEN", "RESERVED", "COMPLETED"})
+    void listAllowsPublicStatuses(String statusValue) throws Exception {
         User author = saveUser("Public Author", "010-2222-3333", "Busan");
         Dog dog = saveDog(author, statusValue.toLowerCase() + "-dog");
         saveProfileImage(dog, "public-profile.jpg");
@@ -176,6 +197,7 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
                 .andReturn();
 
+        assertPublicListItemFields(result);
         assertThat(responseBody(result)).doesNotContain("nose_image_url");
     }
 
@@ -316,6 +338,25 @@ class AdoptionPostPublicQueryControllerTest {
                 .andReturn();
 
         assertThat(responseBody(result)).doesNotContain("nose_image_url", "postId");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"OPEN", "RESERVED", "COMPLETED"})
+    void detailAllowsPublicStatuses(String statusValue) throws Exception {
+        User author = saveUser("Detail Status Author", "010-2323-4545", "Seoul");
+        Dog dog = saveDog(author, statusValue + "DetailDog");
+        saveVerificationLog(author, dog, VerificationResult.PASSED);
+        AdoptionPost post = savePost(author, dog, AdoptionPostStatus.valueOf(statusValue), statusValue + " detail post");
+
+        MvcResult result = mockMvc.perform(get("/api/adoption-posts/{post_id}", post.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.post_id").value(post.getId()))
+                .andExpect(jsonPath("$.status").value(statusValue))
+                .andExpect(jsonPath("$.nose_image_url").doesNotExist())
+                .andReturn();
+
+        assertPublicDetailFields(result);
+        assertThat(responseBody(result)).doesNotContain("nose_image_url", "postId", "dogId");
     }
 
     @Test
@@ -536,6 +577,11 @@ class AdoptionPostPublicQueryControllerTest {
     private void assertPublicListItemFields(MvcResult result) throws Exception {
         JsonNode item = objectMapper.readTree(responseBody(result)).path("items").get(0);
         assertThat(fieldNames(item)).containsExactlyInAnyOrderElementsOf(PUBLIC_LIST_ITEM_FIELDS);
+    }
+
+    private void assertPublicDetailFields(MvcResult result) throws Exception {
+        JsonNode body = objectMapper.readTree(responseBody(result));
+        assertThat(fieldNames(body)).containsExactlyInAnyOrderElementsOf(PUBLIC_DETAIL_FIELDS);
     }
 
     private Set<String> fieldNames(JsonNode node) {

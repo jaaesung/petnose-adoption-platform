@@ -42,8 +42,10 @@ The current Flutter MVP flow is documented in `docs/PETNOSE_MVP_API_CONTRACT.md`
 - `GET /api/users/me`
 - `PATCH /api/users/me/profile`
 - `POST /api/adoption-posts`
-- `GET /api/adoption-posts`
-- `GET /api/adoption-posts/{post_id}`
+- `GET /api/adoption-posts` public feed, stabilized for `OPEN`, `RESERVED`, and `COMPLETED`
+- `GET /api/adoption-posts/{post_id}` public detail for public statuses
+- `GET /api/adoption-posts/me` owner-only post list
+- `PATCH /api/adoption-posts/{post_id}/status` owner-only status management
 
 Public adoption post list/detail responses must not expose `nose_image_url`. Dog registration is owner-scoped and may return the newly submitted dog's own `nose_image_url`; `top_match` must never include a raw nose image URL.
 
