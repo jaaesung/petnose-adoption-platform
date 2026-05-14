@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -156,7 +157,7 @@ class DogRegistrationControllerTest {
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error_code").value("USER_NOT_FOUND"))
                 .andExpect(jsonPath("$.message").value("존재하지 않는 user_id 입니다."))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validMultipartRequest() {

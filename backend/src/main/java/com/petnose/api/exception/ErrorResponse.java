@@ -2,7 +2,6 @@ package com.petnose.api.exception;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -19,11 +18,10 @@ public record ErrorResponse(
     }
 
     public static ErrorResponse of(String errorCode, String message, Map<String, Object> extraDetails) {
-        Map<String, Object> details = new LinkedHashMap<>();
-        if (extraDetails != null) {
-            details.putAll(extraDetails);
+        Map<String, Object> details = null;
+        if (extraDetails != null && !extraDetails.isEmpty()) {
+            details = new LinkedHashMap<>(extraDetails);
         }
-        details.put("timestamp", Instant.now().toString());
         return new ErrorResponse(errorCode, message, details);
     }
 }
