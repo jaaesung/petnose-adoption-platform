@@ -23,8 +23,8 @@ public class AdoptionPostController {
     @GetMapping
     public AdoptionPostListResponse list(
             @RequestParam(value = "status", required = false) String status,
-            @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size
+            @RequestParam(value = "page", required = false) String page,
+            @RequestParam(value = "size", required = false) String size
     ) {
         return adoptionPostService.findPublicPosts(status, page, size);
     }

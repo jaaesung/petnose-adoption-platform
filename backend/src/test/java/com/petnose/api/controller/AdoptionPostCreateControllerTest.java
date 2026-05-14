@@ -146,7 +146,7 @@ class AdoptionPostCreateControllerTest {
         createPost(tokenFor(user), body(dog.getId(), "제목", "내용", requestedStatus))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("INVALID_POST_STATUS"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
 
         assertThat(adoptionPostRepository.count()).isZero();
     }

@@ -28,6 +28,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.isEmptyOrNullString;
 import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -150,7 +151,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.message").exists())
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -164,7 +165,7 @@ class AuthUserApiIntegrationTest {
                         .content(json(body)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -174,7 +175,7 @@ class AuthUserApiIntegrationTest {
                         .content("{"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -189,7 +190,7 @@ class AuthUserApiIntegrationTest {
                         ))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error_code").value("EMAIL_ALREADY_EXISTS"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -220,7 +221,7 @@ class AuthUserApiIntegrationTest {
                         ))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("INVALID_CREDENTIALS"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -233,7 +234,7 @@ class AuthUserApiIntegrationTest {
                         ))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("INVALID_CREDENTIALS"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -248,7 +249,7 @@ class AuthUserApiIntegrationTest {
                         ))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("USER_INACTIVE"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -276,7 +277,7 @@ class AuthUserApiIntegrationTest {
         mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -285,7 +286,7 @@ class AuthUserApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Token abc"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -294,7 +295,7 @@ class AuthUserApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer invalid-token"))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -306,7 +307,7 @@ class AuthUserApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredToken))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -317,7 +318,7 @@ class AuthUserApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error_code").value("USER_NOT_FOUND"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -334,7 +335,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("USER_INACTIVE"))
                 .andExpect(jsonPath("$.password_hash").doesNotExist())
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -412,7 +413,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.details.fields[0]").value("display_name"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
     }
 
     @Test
@@ -427,7 +428,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.details.fields[0]").value("contact_phone"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
     }
 
     @Test
@@ -442,7 +443,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.details.fields[0]").value("region"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
     }
 
     @Test
@@ -452,7 +453,7 @@ class AuthUserApiIntegrationTest {
                         .content(json(Map.of("display_name", "No Token"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -470,7 +471,7 @@ class AuthUserApiIntegrationTest {
                         .content(json(Map.of("display_name", "Should Not Update"))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("USER_INACTIVE"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -524,7 +525,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.details.fields[0]").value("display_name"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
     }
 
     private void register(String email, String password, String displayName, String contactPhone, String region) throws Exception {

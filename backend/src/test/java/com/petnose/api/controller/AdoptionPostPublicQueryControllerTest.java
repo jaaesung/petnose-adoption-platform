@@ -1,5 +1,7 @@
 package com.petnose.api.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.petnose.api.domain.entity.AdoptionPost;
 import com.petnose.api.domain.entity.Dog;
 import com.petnose.api.domain.entity.DogImage;
@@ -30,6 +32,8 @@ import org.springframework.test.web.servlet.MvcResult;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,8 +48,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 class AdoptionPostPublicQueryControllerTest {
 
+    private static final Set<String> PUBLIC_LIST_ITEM_FIELDS = Set.of(
+            "post_id",
+            "dog_id",
+            "title",
+            "status",
+            "dog_name",
+            "breed",
+            "gender",
+            "birth_date",
+            "profile_image_url",
+            "verification_status",
+            "author_display_name",
+            "author_region",
+            "published_at",
+            "created_at"
+    );
+
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     @Autowired
     private UserRepository userRepository;
@@ -108,10 +132,29 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.items[0].created_at").isNotEmpty())
                 .andExpect(jsonPath("$.items[0].content").doesNotExist())
                 .andExpect(jsonPath("$.items[0].author_contact_phone").doesNotExist())
+                .andExpect(jsonPath("$.items[0].author_user_id").doesNotExist())
                 .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
                 .andReturn();
 
-        assertThat(responseBody(result)).doesNotContain("nose_image_url", "postId", "totalCount");
+        assertPublicListItemFields(result);
+        assertThat(responseBody(result)).doesNotContain(
+                "nose_image_url",
+                "content",
+                "author_contact_phone",
+                "author_user_id",
+                "password_hash",
+                "email",
+                "postId",
+                "dogId",
+                "dogName",
+                "profileImageUrl",
+                "verificationStatus",
+                "authorDisplayName",
+                "authorRegion",
+                "publishedAt",
+                "createdAt",
+                "totalCount"
+        );
     }
 
     @ParameterizedTest
@@ -143,13 +186,27 @@ class AdoptionPostPublicQueryControllerTest {
                         .param("status", statusValue))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("INVALID_POST_STATUS"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"open", "completed", "Draft"})
+    void listRejectsLowercaseAndMixedCaseStatus(String statusValue) throws Exception {
+        mockMvc.perform(get("/api/adoption-posts")
+                        .param("status", statusValue))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("INVALID_POST_STATUS"));
     }
 
     @Test
     void listRejectsInvalidPageRequest() throws Exception {
         mockMvc.perform(get("/api/adoption-posts")
                         .param("page", "-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("INVALID_PAGE_REQUEST"));
+
+        mockMvc.perform(get("/api/adoption-posts")
+                        .param("page", "abc"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("INVALID_PAGE_REQUEST"));
 
@@ -162,6 +219,68 @@ class AdoptionPostPublicQueryControllerTest {
                         .param("size", "101"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("INVALID_PAGE_REQUEST"));
+
+        mockMvc.perform(get("/api/adoption-posts")
+                        .param("size", "abc"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("INVALID_PAGE_REQUEST"));
+    }
+
+    @Test
+    void listReturnsEmptyPageWithStableEnvelope() throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/adoption-posts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(0)))
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.total_count").value(0))
+                .andReturn();
+
+        assertThat(responseBody(result)).isEqualTo("{\"items\":[],\"page\":0,\"size\":20,\"total_count\":0}");
+    }
+
+    @Test
+    void listOrdersLatestFirstByPublishedAtThenId() throws Exception {
+        User author = saveUser("Order Author", "010-1111-2222", "Seoul");
+        Dog dog = saveDog(author, "OrderDog");
+        saveVerificationLog(author, dog, VerificationResult.PASSED);
+
+        AdoptionPost olderPost = savePost(
+                author,
+                dog,
+                AdoptionPostStatus.OPEN,
+                "Older published post",
+                LocalDateTime.of(2026, 1, 1, 9, 0)
+        );
+        AdoptionPost lowerIdTiePost = savePost(
+                author,
+                dog,
+                AdoptionPostStatus.OPEN,
+                "Lower id tie post",
+                LocalDateTime.of(2026, 1, 2, 9, 0)
+        );
+        AdoptionPost higherIdTiePost = savePost(
+                author,
+                dog,
+                AdoptionPostStatus.OPEN,
+                "Higher id tie post",
+                LocalDateTime.of(2026, 1, 2, 9, 0)
+        );
+        AdoptionPost unpublishedPost = savePost(
+                author,
+                dog,
+                AdoptionPostStatus.OPEN,
+                "Unpublished post",
+                null
+        );
+
+        mockMvc.perform(get("/api/adoption-posts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items", hasSize(4)))
+                .andExpect(jsonPath("$.items[0].post_id").value(higherIdTiePost.getId()))
+                .andExpect(jsonPath("$.items[1].post_id").value(lowerIdTiePost.getId()))
+                .andExpect(jsonPath("$.items[2].post_id").value(olderPost.getId()))
+                .andExpect(jsonPath("$.items[3].post_id").value(unpublishedPost.getId()));
     }
 
     @Test
@@ -251,6 +370,39 @@ class AdoptionPostPublicQueryControllerTest {
     }
 
     @Test
+    void listNormalizesRelativeFilesPrefixWithoutDuplicatingFilesPrefix() throws Exception {
+        User author = saveUser("Relative Prefix Author", "010-1212-3434", "Gwangju");
+        Dog dog = saveDog(author, "RelativePrefixDog");
+        saveProfileImagePath(dog, "files/dogs/%s/profile/relative-prefix.jpg".formatted(dog.getId()));
+        saveVerificationLog(author, dog, VerificationResult.PASSED);
+        savePost(author, dog, AdoptionPostStatus.OPEN, "Relative files prefix post");
+
+        MvcResult result = mockMvc.perform(get("/api/adoption-posts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].profile_image_url").value("/files/dogs/%s/profile/relative-prefix.jpg".formatted(dog.getId())))
+                .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
+                .andReturn();
+
+        assertThat(responseBody(result)).doesNotContain("/files/files/", "nose_image_url");
+    }
+
+    @Test
+    void listDefaultsMissingProfileAndVerificationLogToNullAndPending() throws Exception {
+        User author = saveUser("List Pending Author", "010-4545-6767", "Jeju");
+        Dog dog = saveDog(author, "ListPendingDog");
+        savePost(author, dog, AdoptionPostStatus.OPEN, "List pending post");
+
+        MvcResult result = mockMvc.perform(get("/api/adoption-posts"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].profile_image_url").value(nullValue()))
+                .andExpect(jsonPath("$.items[0].verification_status").value("PENDING"))
+                .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
+                .andReturn();
+
+        assertThat(responseBody(result)).doesNotContain("nose_image_url");
+    }
+
+    @Test
     void listSelectsLatestProfileImageDeterministically() throws Exception {
         User author = saveUser("Image Author", "010-9999-0000", "Daejeon");
         Dog dog = saveDog(author, "ImageDog");
@@ -275,7 +427,7 @@ class AdoptionPostPublicQueryControllerTest {
         mockMvc.perform(get("/api/adoption-posts/{post_id}", post.getId()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error_code").value("POST_NOT_PUBLIC"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -283,7 +435,7 @@ class AdoptionPostPublicQueryControllerTest {
         mockMvc.perform(get("/api/adoption-posts/{post_id}", 999999L))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error_code").value("POST_NOT_FOUND"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -352,15 +504,21 @@ class AdoptionPostPublicQueryControllerTest {
     }
 
     private AdoptionPost savePost(User author, Dog dog, AdoptionPostStatus status, String title) {
+        LocalDateTime publishedAt = null;
+        if (status == AdoptionPostStatus.OPEN || status == AdoptionPostStatus.RESERVED || status == AdoptionPostStatus.COMPLETED) {
+            publishedAt = LocalDateTime.now();
+        }
+        return savePost(author, dog, status, title, publishedAt);
+    }
+
+    private AdoptionPost savePost(User author, Dog dog, AdoptionPostStatus status, String title, LocalDateTime publishedAt) {
         AdoptionPost post = new AdoptionPost();
         post.setAuthorUserId(author.getId());
         post.setDogId(dog.getId());
         post.setTitle(title);
         post.setContent("Friendly dog looking for a family.");
         post.setStatus(status);
-        if (status == AdoptionPostStatus.OPEN || status == AdoptionPostStatus.RESERVED || status == AdoptionPostStatus.COMPLETED) {
-            post.setPublishedAt(LocalDateTime.now());
-        }
+        post.setPublishedAt(publishedAt);
         if (status == AdoptionPostStatus.CLOSED) {
             post.setClosedAt(LocalDateTime.now());
         }
@@ -373,5 +531,16 @@ class AdoptionPostPublicQueryControllerTest {
 
     private String responseBody(MvcResult result) {
         return new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
+    }
+
+    private void assertPublicListItemFields(MvcResult result) throws Exception {
+        JsonNode item = objectMapper.readTree(responseBody(result)).path("items").get(0);
+        assertThat(fieldNames(item)).containsExactlyInAnyOrderElementsOf(PUBLIC_LIST_ITEM_FIELDS);
+    }
+
+    private Set<String> fieldNames(JsonNode node) {
+        Set<String> names = new LinkedHashSet<>();
+        node.fieldNames().forEachRemaining(names::add);
+        return names;
     }
 }

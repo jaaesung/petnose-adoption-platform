@@ -366,7 +366,7 @@ class DogQueryControllerTest {
         mockMvc.perform(get("/api/dogs/{dog_id}", dog.getId()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("DOG_NOT_ACCESSIBLE"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -378,7 +378,7 @@ class DogQueryControllerTest {
         mockMvc.perform(get("/api/dogs/{dog_id}", dog.getId()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("DOG_NOT_ACCESSIBLE"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -386,7 +386,7 @@ class DogQueryControllerTest {
         mockMvc.perform(get("/api/dogs/{dog_id}", UUID.randomUUID().toString()))
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.error_code").value("DOG_NOT_FOUND"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     @Test
@@ -416,7 +416,7 @@ class DogQueryControllerTest {
                         .param("size", String.valueOf(size)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("INVALID_PAGE_REQUEST"))
-                .andExpect(jsonPath("$.details.timestamp").exists());
+                .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
     private User saveUser(String displayName, boolean active) {

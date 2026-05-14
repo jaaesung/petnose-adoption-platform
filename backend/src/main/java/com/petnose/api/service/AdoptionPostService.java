@@ -39,6 +39,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class AdoptionPostService {
 
+    private static final int DEFAULT_PUBLIC_PAGE = 0;
+    private static final int DEFAULT_PUBLIC_PAGE_SIZE = 20;
     private static final int MAX_PUBLIC_PAGE_SIZE = 100;
 
     private static final List<AdoptionPostStatus> ACTIVE_STATUSES = List.of(
@@ -52,6 +54,13 @@ public class AdoptionPostService {
     private final VerificationLogRepository verificationLogRepository;
     private final DogImageRepository dogImageRepository;
     private final AdoptionPostRepository adoptionPostRepository;
+
+    @Transactional(readOnly = true)
+    public AdoptionPostListResponse findPublicPosts(String statusParam, String pageParam, String sizeParam) {
+        int page = parsePageParameter(pageParam, DEFAULT_PUBLIC_PAGE);
+        int size = parsePageParameter(sizeParam, DEFAULT_PUBLIC_PAGE_SIZE);
+        return findPublicPosts(statusParam, page, size);
+    }
 
     @Transactional(readOnly = true)
     public AdoptionPostListResponse findPublicPosts(String statusParam, int page, int size) {
@@ -193,14 +202,29 @@ public class AdoptionPostService {
         }
     }
 
+    private int parsePageParameter(String value, int defaultValue) {
+        if (value == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw invalidPageRequest();
+        }
+    }
+
     private void validatePageRequest(int page, int size) {
         if (page < 0 || size <= 0 || size > MAX_PUBLIC_PAGE_SIZE) {
-            throw new ApiException(
-                    HttpStatus.BAD_REQUEST,
-                    "INVALID_PAGE_REQUEST",
-                    "page must be greater than or equal to 0 and size must be between 1 and 100"
-            );
+            throw invalidPageRequest();
         }
+    }
+
+    private ApiException invalidPageRequest() {
+        return new ApiException(
+                HttpStatus.BAD_REQUEST,
+                "INVALID_PAGE_REQUEST",
+                "page must be greater than or equal to 0 and size must be between 1 and 100"
+        );
     }
 
     private PublicPostContext loadPublicPostContext(List<AdoptionPost> posts) {
