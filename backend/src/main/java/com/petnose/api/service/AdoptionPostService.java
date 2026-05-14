@@ -13,6 +13,10 @@ import com.petnose.api.dto.adoption.AdoptionPostCreateResponse;
 import com.petnose.api.dto.adoption.AdoptionPostDetailResponse;
 import com.petnose.api.dto.adoption.AdoptionPostListItemResponse;
 import com.petnose.api.dto.adoption.AdoptionPostListResponse;
+import com.petnose.api.dto.adoption.AdoptionPostOwnerListItemResponse;
+import com.petnose.api.dto.adoption.AdoptionPostOwnerListResponse;
+import com.petnose.api.dto.adoption.AdoptionPostStatusUpdateRequest;
+import com.petnose.api.dto.adoption.AdoptionPostStatusUpdateResponse;
 import com.petnose.api.exception.ApiException;
 import com.petnose.api.repository.AdoptionPostRepository;
 import com.petnose.api.repository.DogImageRepository;
@@ -80,6 +84,40 @@ public class AdoptionPostService {
     }
 
     @Transactional(readOnly = true)
+    public AdoptionPostOwnerListResponse findOwnerPosts(
+            Long currentUserId,
+            String statusParam,
+            String pageParam,
+            String sizeParam
+    ) {
+        int page = parsePageParameter(pageParam, DEFAULT_PUBLIC_PAGE);
+        int size = parsePageParameter(sizeParam, DEFAULT_PUBLIC_PAGE_SIZE);
+        return findOwnerPosts(currentUserId, statusParam, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public AdoptionPostOwnerListResponse findOwnerPosts(
+            Long currentUserId,
+            String statusParam,
+            int page,
+            int size
+    ) {
+        validatePageRequest(page, size);
+        AdoptionPostStatus status = AdoptionPostStatus.fromOwnerQuery(statusParam);
+        PageRequest pageRequest = PageRequest.of(page, size);
+        Page<AdoptionPost> posts = status == null
+                ? adoptionPostRepository.findByAuthorUserIdOrderByCreatedAtDescIdDesc(currentUserId, pageRequest)
+                : adoptionPostRepository.findByAuthorUserIdAndStatusOrderByCreatedAtDescIdDesc(currentUserId, status, pageRequest);
+
+        OwnerPostContext context = loadOwnerPostContext(posts.getContent());
+        List<AdoptionPostOwnerListItemResponse> items = posts.getContent().stream()
+                .map(post -> toOwnerListItemResponse(post, context))
+                .toList();
+
+        return new AdoptionPostOwnerListResponse(items, page, size, posts.getTotalElements());
+    }
+
+    @Transactional(readOnly = true)
     public AdoptionPostDetailResponse findPublicPost(Long postId) {
         AdoptionPost post = adoptionPostRepository.findById(postId)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "POST_NOT_FOUND", "Adoption post was not found."));
@@ -128,6 +166,32 @@ public class AdoptionPostService {
                 saved.getPublishedAt(),
                 saved.getCreatedAt()
         );
+    }
+
+    @Transactional
+    public AdoptionPostStatusUpdateResponse updateStatus(
+            Long currentUserId,
+            Long postId,
+            AdoptionPostStatusUpdateRequest request
+    ) {
+        AdoptionPost post = adoptionPostRepository.findById(postId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "POST_NOT_FOUND", "Adoption post was not found."));
+
+        if (!post.getAuthorUserId().equals(currentUserId)) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "POST_OWNER_MISMATCH", "현재 사용자의 게시글이 아닙니다.");
+        }
+
+        AdoptionPostStatus targetStatus = parseStatusUpdateRequest(request);
+        AdoptionPostStatus currentStatus = post.getStatus();
+        if (currentStatus == targetStatus) {
+            return toStatusUpdateResponse(post);
+        }
+        validateStatusTransition(currentStatus, targetStatus);
+
+        LocalDateTime now = LocalDateTime.now();
+        applyStatusTransition(currentUserId, post, currentStatus, targetStatus, now);
+        adoptionPostRepository.flush();
+        return toStatusUpdateResponse(post);
     }
 
     private void validateRequest(AdoptionPostCreateRequest request) {
@@ -202,6 +266,101 @@ public class AdoptionPostService {
         }
     }
 
+    private void validateNoOtherActivePost(String dogId, Long currentPostId) {
+        if (adoptionPostRepository.existsByDogIdAndStatusInAndIdNot(dogId, ACTIVE_STATUSES, currentPostId)) {
+            throw new ApiException(HttpStatus.CONFLICT, "ACTIVE_POST_ALREADY_EXISTS", "이미 활성 분양 게시글이 있습니다.");
+        }
+    }
+
+    private AdoptionPostStatus parseStatusUpdateRequest(AdoptionPostStatusUpdateRequest request) {
+        return AdoptionPostStatus.fromStatusUpdateRequest(request == null ? null : request.status());
+    }
+
+    private void validateStatusTransition(AdoptionPostStatus currentStatus, AdoptionPostStatus targetStatus) {
+        boolean allowed = switch (currentStatus) {
+            case DRAFT -> targetStatus == AdoptionPostStatus.OPEN || targetStatus == AdoptionPostStatus.CLOSED;
+            case OPEN -> targetStatus == AdoptionPostStatus.RESERVED
+                    || targetStatus == AdoptionPostStatus.COMPLETED
+                    || targetStatus == AdoptionPostStatus.CLOSED;
+            case RESERVED -> targetStatus == AdoptionPostStatus.OPEN
+                    || targetStatus == AdoptionPostStatus.COMPLETED
+                    || targetStatus == AdoptionPostStatus.CLOSED;
+            case COMPLETED, CLOSED -> false;
+        };
+
+        if (!allowed) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_STATUS_TRANSITION",
+                    "요청한 게시글 상태 변경은 허용되지 않습니다."
+            );
+        }
+    }
+
+    private void applyStatusTransition(
+            Long currentUserId,
+            AdoptionPost post,
+            AdoptionPostStatus currentStatus,
+            AdoptionPostStatus targetStatus,
+            LocalDateTime now
+    ) {
+        if (currentStatus == AdoptionPostStatus.DRAFT && targetStatus == AdoptionPostStatus.OPEN) {
+            validatePublishEligibilityForExistingPost(currentUserId, post);
+            post.setStatus(AdoptionPostStatus.OPEN);
+            if (post.getPublishedAt() == null) {
+                post.setPublishedAt(now);
+            }
+            post.setClosedAt(null);
+            return;
+        }
+
+        if (currentStatus == AdoptionPostStatus.RESERVED && targetStatus == AdoptionPostStatus.OPEN) {
+            post.setStatus(AdoptionPostStatus.OPEN);
+            if (post.getPublishedAt() == null) {
+                post.setPublishedAt(now);
+            }
+            post.setClosedAt(null);
+            return;
+        }
+
+        if (targetStatus == AdoptionPostStatus.RESERVED) {
+            post.setStatus(AdoptionPostStatus.RESERVED);
+            post.setClosedAt(null);
+            return;
+        }
+
+        if (targetStatus == AdoptionPostStatus.COMPLETED) {
+            post.setStatus(AdoptionPostStatus.COMPLETED);
+            post.setClosedAt(now);
+            markDogAdopted(post.getDogId());
+            return;
+        }
+
+        if (targetStatus == AdoptionPostStatus.CLOSED) {
+            post.setStatus(AdoptionPostStatus.CLOSED);
+            post.setClosedAt(now);
+        }
+    }
+
+    private void validatePublishEligibilityForExistingPost(Long currentUserId, AdoptionPost post) {
+        User currentUser = userRepository.findById(currentUserId)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다."));
+        validateUser(currentUser);
+
+        Dog dog = dogRepository.findById(post.getDogId())
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DOG_NOT_FOUND", "강아지를 찾을 수 없습니다."));
+        validateDogOwner(currentUser, dog);
+        validateDogStatus(dog);
+        validateLatestVerificationLog(dog.getId());
+        validateNoOtherActivePost(dog.getId(), post.getId());
+    }
+
+    private void markDogAdopted(String dogId) {
+        Dog dog = dogRepository.findById(dogId)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "DOG_NOT_FOUND", "강아지를 찾을 수 없습니다."));
+        dog.setStatus(DogStatus.ADOPTED);
+    }
+
     private int parsePageParameter(String value, int defaultValue) {
         if (value == null) {
             return defaultValue;
@@ -243,6 +402,21 @@ public class AdoptionPostService {
         return new PublicPostContext(
                 dogsById,
                 authorsById,
+                loadProfileImageUrlsByDogId(dogIds),
+                loadVerificationStatusesByDogId(dogIds)
+        );
+    }
+
+    private OwnerPostContext loadOwnerPostContext(List<AdoptionPost> posts) {
+        Set<String> dogIds = posts.stream()
+                .map(AdoptionPost::getDogId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        Map<String, Dog> dogsById = dogRepository.findAllById(dogIds).stream()
+                .collect(Collectors.toMap(Dog::getId, Function.identity()));
+
+        return new OwnerPostContext(
+                dogsById,
                 loadProfileImageUrlsByDogId(dogIds),
                 loadVerificationStatusesByDogId(dogIds)
         );
@@ -292,6 +466,41 @@ public class AdoptionPostService {
         );
     }
 
+    private AdoptionPostOwnerListItemResponse toOwnerListItemResponse(AdoptionPost post, OwnerPostContext context) {
+        Dog dog = requiredDog(post, context);
+
+        return new AdoptionPostOwnerListItemResponse(
+                post.getId(),
+                dog.getId(),
+                post.getTitle(),
+                post.getStatus().name(),
+                dog.getName(),
+                dog.getBreed(),
+                dog.getGender() == null ? null : dog.getGender().name(),
+                dog.getBirthDate(),
+                context.profileImageUrlsByDogId().get(dog.getId()),
+                context.verificationStatusesByDogId().getOrDefault(dog.getId(), "PENDING"),
+                post.getPublishedAt(),
+                post.getClosedAt(),
+                post.getCreatedAt(),
+                post.getUpdatedAt()
+        );
+    }
+
+    private AdoptionPostStatusUpdateResponse toStatusUpdateResponse(AdoptionPost post) {
+        return new AdoptionPostStatusUpdateResponse(
+                post.getId(),
+                post.getDogId(),
+                post.getTitle(),
+                post.getContent(),
+                post.getStatus().name(),
+                post.getPublishedAt(),
+                post.getClosedAt(),
+                post.getCreatedAt(),
+                post.getUpdatedAt()
+        );
+    }
+
     private AdoptionPostDetailResponse toDetailResponse(AdoptionPost post, PublicPostContext context) {
         Dog dog = requiredDog(post, context);
         User author = requiredAuthor(post, context);
@@ -319,6 +528,14 @@ public class AdoptionPostService {
     }
 
     private Dog requiredDog(AdoptionPost post, PublicPostContext context) {
+        Dog dog = context.dogsById().get(post.getDogId());
+        if (dog == null) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "POST_DATA_INTEGRITY_ERROR", "Post dog data is missing.");
+        }
+        return dog;
+    }
+
+    private Dog requiredDog(AdoptionPost post, OwnerPostContext context) {
         Dog dog = context.dogsById().get(post.getDogId());
         if (dog == null) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "POST_DATA_INTEGRITY_ERROR", "Post dog data is missing.");
@@ -367,6 +584,13 @@ public class AdoptionPostService {
     private record PublicPostContext(
             Map<String, Dog> dogsById,
             Map<Long, User> authorsById,
+            Map<String, String> profileImageUrlsByDogId,
+            Map<String, String> verificationStatusesByDogId
+    ) {
+    }
+
+    private record OwnerPostContext(
+            Map<String, Dog> dogsById,
             Map<String, String> profileImageUrlsByDogId,
             Map<String, String> verificationStatusesByDogId
     ) {

@@ -53,6 +53,29 @@ public enum AdoptionPostStatus {
         );
     }
 
+    public static AdoptionPostStatus fromOwnerQuery(String value) {
+        if (value == null) {
+            return null;
+        }
+        return parseManagementStatus(value);
+    }
+
+    public static AdoptionPostStatus fromStatusUpdateRequest(String value) {
+        return parseManagementStatus(value);
+    }
+
+    private static AdoptionPostStatus parseManagementStatus(String value) {
+        try {
+            return AdoptionPostStatus.valueOf(value);
+        } catch (IllegalArgumentException | NullPointerException ignored) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "INVALID_POST_STATUS",
+                    "status must be one of DRAFT, OPEN, RESERVED, COMPLETED, CLOSED"
+            );
+        }
+    }
+
     public boolean isPublicVisible() {
         return PUBLIC_STATUSES.contains(this);
     }
