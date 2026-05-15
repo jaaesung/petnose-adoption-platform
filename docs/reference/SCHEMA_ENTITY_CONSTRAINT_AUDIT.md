@@ -3,9 +3,34 @@
 ## 문서 성격
 
 - 감사 보고서
-- 구현 변경 없음
-- active canonical 변경 없음
-- 다음 수정 브랜치 결정을 위한 자료
+- 원본 감사 본문은 follow-up docs/schema alignment 이전 snapshot
+- 원본 감사 자체는 구현 변경 없음 / active canonical 변경 없음
+- 현재 문서는 follow-up branch의 documentation-only canonical decision note를 포함
+
+## Post-audit canonical decision for docs/schema alignment branch
+
+이 follow-up docs/schema alignment branch는 감사 결과를 바탕으로 active canonical docs를 current MVP service behavior 쪽으로 정렬한다.
+
+- `adoption_posts.title`은 current JPA/service validation에 맞춰 canonical docs에서 200자 제한으로 정렬한다.
+- `adoption_posts.content`는 current JPA/service validation에 맞춰 canonical docs에서 required/non-blank 정책으로 정렬한다.
+- `dogs.breed`와 `dogs.gender`는 dog registration API에서는 required로 문서화하되, operational/import flexibility를 위해 DB-level nullability는 유지하는 결정으로 정리한다.
+- `dog_images.mime_type`, `dog_images.file_size`, `dog_images.sha256`은 service-created row에서 기대되는 metadata로 문서화하되, migration/import flexibility를 위해 DB-level nullability는 유지하는 결정으로 정리한다.
+- 이 follow-up branch는 Java code, tests, runtime Flyway migration, runtime behavior를 변경하지 않는다.
+
+### 현재 branch 적용 후 상태
+
+- active DBML과 documentation-only clean canonical SQL은 이제 `adoption_posts.title`을 200자로, `adoption_posts.content`를 `NOT NULL` / required 정책으로 문서화한다.
+- runtime Flyway V1은 이 branch에서 변경하지 않았다. V1은 여전히 `adoption_posts.title VARCHAR(255) NOT NULL`, `adoption_posts.content TEXT NULL`을 생성한다.
+- 따라서 documentation-only clean schema와 runtime migration은 별도 migration branch가 승인되기 전까지 이 두 제약에서 의도적으로 다를 수 있다.
+- current API/service policy는 이미 title max 200과 content non-blank를 enforce한다.
+- 남은 production 판단은 runtime DB level에서도 title/content 제약을 강제할 새 Flyway migration을 추가할지, 그리고 title/content boundary constraints에 대한 테스트를 추가하거나 조정할지다.
+
+### 원본 감사 본문 읽는 법
+
+- 아래 constraint matrix와 findings는 이 follow-up을 만든 pre-decision audit snapshot을 보존한다.
+- DBML / clean canonical SQL / Flyway V1이 서로 aligned라고 적힌 행은 follow-up docs/schema alignment 이전 감사 시점 설명이다.
+- 이 branch 이후 `adoption_posts.title` / `adoption_posts.content` finding은 documentation-only canonical level에서는 부분 해결되었지만, runtime Flyway level에서는 아직 해결되지 않았다.
+- 아래 본문은 Java code, tests, runtime DB behavior가 이 branch에서 바뀌었다는 뜻으로 읽으면 안 된다.
 
 ## 검토 기준
 
@@ -86,9 +111,10 @@ DTO / 요청 모델:
 
 - 핵심 5개 active domain table 모델은 유지되어 있다. active 테이블은 `users`, `dogs`, `dog_images`, `verification_logs`, `adoption_posts`로 정리되어 있으며, 런타임 Flyway V1도 clean canonical SQL과 같은 5개 테이블을 생성한다.
 - active role은 `USER`, `ADMIN`만 유지되어 있다. legacy role/table/API가 active scope로 재도입된 흔적은 발견하지 못했다.
-- DBML, clean canonical SQL, 런타임 Flyway V1은 주요 필드 제약이 서로 잘 맞는다.
-- JPA/service/API/test와 비교하면 일부 필드는 의도적인 service-level 정책으로 볼 수 있으나, `adoption_posts.title`, `adoption_posts.content`는 canonical schema와 현재 서비스 정책이 명확히 어긋난다.
-- 생산 전에는 문서/스키마 canonical 결정 브랜치를 먼저 만들고, 그 결정에 따라 backend entity/service/test 또는 추가 Flyway migration을 분리해서 정렬하는 것이 안전하다.
+- 원본 감사 시점에는 DBML, clean canonical SQL, 런타임 Flyway V1의 주요 필드 제약이 서로 잘 맞았고, 그 대신 `adoption_posts.title`, `adoption_posts.content`가 canonical docs와 current service policy 사이에서 명확히 어긋났다.
+- 이 follow-up branch 이후에는 DBML과 documentation-only clean canonical SQL이 `adoption_posts.title` 200자 / `adoption_posts.content` required 정책으로 current service policy에 맞춰졌다.
+- runtime Flyway V1은 의도적으로 변경하지 않았으므로, runtime DB는 별도 migration 전까지 title 201-255자와 nullable content를 허용할 수 있다. API/service는 계속 title max 200과 content non-blank를 enforce한다.
+- 생산 전 남은 결정은 이 documentation-only canonical decision을 runtime DB migration과 boundary test로 강제할지 여부다.
 
 ## Constraint Matrix
 
@@ -227,12 +253,12 @@ DTO / 요청 모델:
 ## Recommended Next Work
 
 1. docs/schema canonical alignment patch
-   - `adoption_posts.title` 200 vs 255, `content` nullable vs required를 먼저 canonical 정책으로 결정한다.
-   - `dogs.breed`, `dogs.gender`, `dog_images` metadata의 nullable/service-required 차이를 문서에 명시할지 DB 제약으로 강제할지 결정한다.
+   - 이 branch에서 완료했다.
+   - active DBML, documentation-only clean SQL, API contract, final spec은 current service policy 쪽으로 정렬되었다.
 
-2. backend entity/service/test alignment patch
-   - canonical 결정이 backend 현행 정책과 다르면 entity/service/API tests를 맞춘다.
-   - 현행 backend 정책을 유지한다면 API contract에 길이/required 정책을 명확히 추가하고 tests에 경계값을 보강한다.
+2. backend boundary tests / entity-service alignment check
+   - current service policy는 title max 200과 content non-blank를 이미 enforce한다.
+   - 필요하면 API/service tests에 title/content boundary case를 보강한다.
 
 3. optional Flyway migration
    - 런타임 MySQL에서도 `adoption_posts.title` 길이 또는 `content` `NOT NULL`을 강제해야 한다면 새 migration을 추가한다.

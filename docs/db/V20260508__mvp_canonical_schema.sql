@@ -28,7 +28,11 @@ CREATE TABLE dogs (
     id CHAR(36) NOT NULL,
     owner_user_id BIGINT NOT NULL,
     name VARCHAR(100) NOT NULL,
+    -- Dog registration API requires non-blank breed. The clean schema keeps
+    -- this nullable for operational/import flexibility.
     breed VARCHAR(100) NULL,
+    -- Dog registration API requires MALE, FEMALE, or UNKNOWN. UNKNOWN is an
+    -- explicit API value and is not applied as a DB default.
     gender VARCHAR(10) NULL,
     birth_date DATE NULL,
     description TEXT NULL,
@@ -53,6 +57,8 @@ CREATE TABLE dog_images (
     dog_id CHAR(36) NOT NULL,
     image_type VARCHAR(20) NOT NULL,
     file_path VARCHAR(500) NOT NULL,
+    -- Service-created DogImage rows should include mime_type, file_size, and
+    -- sha256. These remain nullable for migration/import flexibility.
     mime_type VARCHAR(100) NULL,
     file_size BIGINT NULL,
     sha256 CHAR(64) NULL,
@@ -106,8 +112,8 @@ CREATE TABLE adoption_posts (
     id BIGINT NOT NULL AUTO_INCREMENT,
     author_user_id BIGINT NOT NULL,
     dog_id CHAR(36) NOT NULL,
-    title VARCHAR(255) NOT NULL,
-    content TEXT NULL,
+    title VARCHAR(200) NOT NULL,
+    content TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     published_at TIMESTAMP NULL,
     closed_at TIMESTAMP NULL,

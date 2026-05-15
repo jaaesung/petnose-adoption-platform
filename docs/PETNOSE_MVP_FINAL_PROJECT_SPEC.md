@@ -68,6 +68,8 @@ Columns:
 
 `dogs`는 `qdrant_point_id`를 저장하지 않는다. Qdrant point id는 항상 `dogs.id`와 같다.
 
+`breed`와 `gender`는 DB/entity level에서 operational/import flexibility를 위해 nullable로 둘 수 있다. 다만 current MVP dog registration API인 `POST /api/dogs/register`는 `breed` non-blank와 `gender` 제출을 요구한다. `gender`는 `MALE`, `FEMALE`, `UNKNOWN` 중 하나이며, `UNKNOWN`은 client가 명시적으로 제출하는 값이고 DB default로 자동 적용되는 값이 아니다.
+
 ## Dog Images
 
 `dog_images`는 image metadata와 relative file path만 저장한다.
@@ -89,6 +91,8 @@ Columns:
 - `uploaded_at`
 
 Image file은 MySQL BLOB column에 저장하지 않는다.
+
+service가 생성하는 `dog_images` row는 정상적으로 `mime_type`, `file_size`, `sha256` metadata를 포함해야 한다. 이 metadata column들은 migration/import flexibility를 위해 DB level에서는 nullable로 남길 수 있다.
 
 ## Verification Logs
 
@@ -119,6 +123,8 @@ Columns:
 
 Embedding vector 자체는 MySQL에 저장하지 않는다. vector는 Qdrant에만 저장한다.
 
+`similarity_score`는 persistence 기준으로 `DECIMAL(6,5)`를 유지한다. API response에서는 numeric JSON 값으로 노출될 수 있으므로 trailing zero 표시까지 보장하지 않는다.
+
 ## Adoption Posts
 
 `adoption_posts`는 adoption listing content와 publishing state를 저장한다.
@@ -145,6 +151,10 @@ Columns:
 - `CLOSED`
 
 Adoption post를 생성하거나 `OPEN`으로 전환하기 전에는 유효한 author `display_name`과 post 작성이 가능한 dog가 필요하다. `DUPLICATE_SUSPECTED`, `REJECTED`, `INACTIVE` 상태의 dog는 post 작성 대상이 될 수 없다.
+
+current MVP post creation policy에서 `title`은 required/non-blank이며 최대 200자다. `content`도 required/non-blank다.
+
+current API timestamp 표현은 resource 계열에 따라 다를 수 있다. dog, dog image, verification log 계열은 Instant-style timestamp를 노출할 수 있고, adoption post 계열은 LocalDateTime-style timestamp를 노출할 수 있다.
 
 ## 인도 시점 비문 확인(Handover-Time Dog Nose Verification)
 
