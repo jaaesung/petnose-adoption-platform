@@ -1,5 +1,11 @@
 # 파일 저장 및 URL 정책
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> file storage, `/files/{relative_path}`, `dog_images.file_path` 정책을 확인할 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+> Qdrant/vector 경계는 `docs/reference/STORAGE_AND_VECTOR_BOUNDARY.md`도 함께 확인한다.
+
 작성 기준일: 2026-04-12
 
 ---
@@ -181,16 +187,16 @@ volumes:
 | Python Embed | `MAX_IMAGE_BYTES` | `${MAX_UPLOAD_SIZE_MB:-20}000000` |
 
 > **주의**: `.env`의 `MAX_UPLOAD_SIZE_MB`를 변경하면 `nginx/conf.d/default.conf`의  
-> `client_max_body_size`도 수동으로 맞춰야 합니다. 추후 `${CLIENT_MAX_BODY_SIZE}` 환경변수로  
-> 통일하는 것을 권장합니다 (현재는 수동 관리).
+> `client_max_body_size`도 수동으로 맞춰야 합니다. 이후 `${CLIENT_MAX_BODY_SIZE}` 환경변수로
+> 통일할 수 있지만, 현재는 수동 관리입니다.
 
 ---
 
-## 미구현 항목 (추후 구현)
+## 현재 MVP/API Contract 제외 항목
 
 | 항목 | 설명 |
 |------|------|
-| 업로드 API | `POST /api/dogs/{id}/images` — Spring Boot 구현 예정 |
+| 업로드 API | `POST /api/dogs/{id}/images` — current MVP/API contract 밖이며 별도 승인 필요 |
 | 파일 검증 | MIME 타입 실제 확인, 이미지 크기(픽셀) 검증 |
 | 중복 제거 | 동일 이미지 SHA-256 해시 기반 중복 저장 방지 |
 | Signed URL | 비공개 파일 요건 시 Spring에서 서명 토큰 발급 |

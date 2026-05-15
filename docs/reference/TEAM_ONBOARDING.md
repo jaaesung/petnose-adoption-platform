@@ -1,5 +1,10 @@
 # 팀원 온보딩 가이드
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> 새 팀원이 local/dev 환경을 준비하고 PR 전 확인 절차를 따라갈 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
 이 저장소를 처음 받은 팀원을 위한 최초 실행 가이드입니다.
 
 ## 환경 의미 (먼저 확인)
@@ -58,7 +63,7 @@ Copy-Item infra\docker\.env.example infra\docker\.env
 | `SPRING_DATASOURCE_PASSWORD` | `change_me_dev_password` | `MYSQL_PASSWORD`와 반드시 동일하게 유지 |
 
 > **절대 `.env` 파일을 git commit하지 마세요.** `.gitignore`로 이미 제외되어 있습니다.  
-> env/secrets 전략 전체 설명: [docs/ENV_STRATEGY.md](ENV_STRATEGY.md)
+> env/secrets 전략 전체 설명: [ENV_STRATEGY.md](ENV_STRATEGY.md)
 
 ---
 
@@ -144,7 +149,7 @@ docker compose \
 
 ## 자주 막히는 문제
 
-> 공용 dev 배포 실패 1차 진단은 [docs/OPS_NOTES.md](OPS_NOTES.md)의  
+> 공용 dev 배포 실패 1차 진단은 [OPS_NOTES.md](OPS_NOTES.md)의
 > `실패 모드별 1차 진단 루틴` 섹션을 우선 확인하세요.
 
 ### Java 버전 불일치 (`invalid source release: 21`)

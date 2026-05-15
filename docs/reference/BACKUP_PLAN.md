@@ -1,5 +1,10 @@
 # 백업 계획
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> MySQL, uploads, Qdrant backup/restore 절차를 확인할 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
 ---
 
 ## MySQL 백업

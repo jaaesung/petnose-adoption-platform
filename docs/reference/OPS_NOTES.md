@@ -1,5 +1,10 @@
 # 운영 메모
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> local/dev 운영, compose, health check, GHCR/CD 절차를 확인할 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
 ---
 
 ## 환경 구분
@@ -15,7 +20,7 @@
 > **사전 조건:** Docker Desktop, Docker Compose v2  
 > 백엔드를 직접 빌드/테스트하려면 **Java 21** 필요 (`java -version` 확인).
 
-> **env/secrets 전략 전체**: [docs/ENV_STRATEGY.md](ENV_STRATEGY.md) 참고.  
+> **env/secrets 전략 전체**: [ENV_STRATEGY.md](ENV_STRATEGY.md) 참고.
 > `.env.example`의 `[SECRET]` 항목(`MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`)은  
 > 반드시 실제 값으로 교체하고 `MYSQL_PASSWORD`와 `SPRING_DATASOURCE_PASSWORD`는 동일하게 유지하세요.
 
@@ -110,7 +115,7 @@ docker compose ... logs -f mysql
 | Qdrant | `http://localhost:6333/healthz` | dev 포트 오픈 시 |
 | 업로드 이미지 | `http://localhost/files/dogs/{uuid}/nose/{filename}` | nginx 직접 서빙 |
 
-> **파일 URL 정책 전체**: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
+> **파일 URL 정책 전체**: [FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
 ---
 
@@ -160,8 +165,8 @@ bash infra/scripts/restore.sh mysql backups/mysql/backup_<YYYYMMDD_HHMMSS>.sql.g
 bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.tar.gz --wipe-first
 ```
 
-상세 실검증 절차는 [docs/BACKUP_PLAN.md](BACKUP_PLAN.md)의 `로컬/dev Drill (1회 실검증)` 섹션을 따릅니다.
-드릴 결과 기록 템플릿: [docs/ops-evidence/backup-restore-drill-log.md](ops-evidence/backup-restore-drill-log.md)
+상세 실검증 절차는 [BACKUP_PLAN.md](BACKUP_PLAN.md)의 `로컬/dev Drill (1회 실검증)` 섹션을 따릅니다.
+드릴 결과 기록 템플릿: [backup-restore-drill-log.md](../ops-evidence/backup-restore-drill-log.md)
 
 ---
 

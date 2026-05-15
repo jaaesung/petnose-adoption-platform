@@ -1,3 +1,10 @@
+> 보관 문서(Archive)
+>
+> 이 문서는 과거 설계/초안 기록입니다.
+> 현재 구현 기준으로 사용하지 마세요.
+> 현재 기준은 `docs/README.md`와 `docs/PROJECT_KNOWLEDGE_INDEX.md`에서 시작하세요.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선합니다.
+
 # Release Readiness — 팀원 배포 가능 여부 판단
 
 이 문서는 현재 저장소가 "팀원이 clone 후 바로 개발을 시작할 수 있는 수준"인지 판단하기 위한 기준표입니다.  
@@ -94,7 +101,7 @@
 
 ## 실제 졸업작품 레포로 옮길 때 다시 확인할 것
 
-1. **JPA Entity 구현** — `docs/TABLE_DRAFT.md` 기반으로 엔티티 작성. 완료 후 `ddl-auto: none` → `validate` 전환 권장 ([docs/DB_MIGRATION_STRATEGY.md](DB_MIGRATION_STRATEGY.md) 참고)
+1. **JPA Entity 구현** — `docs/TABLE_DRAFT.md` 기반으로 엔티티 작성. 완료 후 `ddl-auto: none` → `validate` 전환 권장 ([docs/DB_MIGRATION_STRATEGY.md](../../reference/DB_MIGRATION_STRATEGY.md) 참고)
 2. **실제 비문 임베딩 모델** — `python-embed/app/main.py`의 `_load_model()` 구현 (PyTorch/ONNX 등)
 3. **Spring Security 적용** — JWT 또는 OAuth2 기반 인증
 4. **secrets 관리** — `.env` → Docker Secrets 또는 클라우드 비밀 관리 서비스

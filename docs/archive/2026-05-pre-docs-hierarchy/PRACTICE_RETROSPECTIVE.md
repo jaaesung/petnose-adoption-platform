@@ -1,3 +1,10 @@
+> 보관 문서(Archive)
+>
+> 이 문서는 과거 설계/초안 기록입니다.
+> 현재 구현 기준으로 사용하지 마세요.
+> 현재 기준은 `docs/README.md`와 `docs/PROJECT_KNOWLEDGE_INDEX.md`에서 시작하세요.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선합니다.
+
 # 연습 레포 구축 회고
 
 이 문서는 `petnose-adoption-platform` 연습 레포를 처음부터 구축하면서 겪은 시행착오와 교훈을 기록합니다.  

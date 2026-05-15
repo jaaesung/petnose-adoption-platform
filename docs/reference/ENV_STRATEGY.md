@@ -1,5 +1,10 @@
 # 환경변수 및 Secrets 전략
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> 환경변수, secret 관리, dev/prod 환경 분리 기준을 확인할 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
 이 문서는 PetNose 저장소에서 환경변수와 비밀값을 어떻게 분리하고 관리하는지 설명합니다.
 
 ---
