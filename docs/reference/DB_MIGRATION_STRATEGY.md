@@ -1,0 +1,63 @@
+# DB Migration Strategy
+
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> Flyway/runtime migration 작업에서 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+> 현재 schema 기준은 `docs/db/petnose_mvp_schema.dbml`과 `docs/db/V20260508__mvp_canonical_schema.sql`에서 확인한다.
+
+## 목적
+
+Flyway는 backend runtime의 database schema history를 관리한다. active product schema는 아래 canonical v2 문서에서 별도로 정의한다.
+
+- `docs/PETNOSE_MVP_FINAL_PROJECT_SPEC.md`
+- `docs/db/petnose_mvp_schema.dbml`
+- `docs/db/V20260508__mvp_canonical_schema.sql`
+
+`docs/db/` 아래의 SQL은 문서화된 clean schema다. application이 자동 적용하는 runtime migration file이 아니다.
+
+## 현재 정책
+
+- 이미 적용된 backend Flyway migration file은 수정하지 않는다.
+- implementation work가 승인된 경우에만 새 backend migration을 추가한다.
+- dev/prod runtime에서는 JPA DDL generation을 비활성화한다.
+- clean dev DB rebuild는 local data를 버릴 수 있으므로 명시적 승인 뒤에만 수행한다.
+
+## Backend Migration Directory
+
+```text
+backend/src/main/resources/db/migration/
+```
+
+Naming:
+
+```text
+V{version}__{description}.sql
+```
+
+Examples:
+
+```text
+V4__align_users_profile_fields.sql
+V5__move_registration_snapshot_to_verification_logs.sql
+```
+
+## Environment Policy
+
+| Environment | Flyway | JPA DDL | Notes |
+|---|---|---|---|
+| dev | enabled | `none` | Flyway owns DDL |
+| test | usually disabled | test profile controlled | Tests may use in-memory or mocked persistence |
+| prod | enabled | `none` | Direct production DDL is not allowed |
+
+## Canonical v2 Alignment Strategy
+
+code change가 승인된 경우 가장 안전한 alignment path는 아래 순서다.
+
+1. `users`에 user profile field를 추가한다.
+2. registration result snapshot read를 `verification_logs` 기준으로 이동한다.
+3. removed dog snapshot column write를 중단한다.
+4. data migration과 rollback review 뒤에만 removed column/table을 drop한다.
+5. Qdrant point id는 `dogs.id`와 같게 유지한다. 별도 DB column을 추가하지 않는다.
+
+local dev에서만 canonical v2 clean schema로 clean rebuild하는 편이 빠를 수 있다. 단, destructive action이므로 명시적 승인이 필요하다.

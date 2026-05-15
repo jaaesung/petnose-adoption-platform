@@ -1,3 +1,10 @@
+> 보관 문서(Archive)
+>
+> 이 문서는 과거 설계/초안 기록입니다.
+> 현재 구현 기준으로 사용하지 마세요.
+> 현재 기준은 `docs/README.md`와 `docs/PROJECT_KNOWLEDGE_INDEX.md`에서 시작하세요.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선합니다.
+
 # API Contract - Flutter / Spring Boot
 
 This document mirrors the active MVP API contract. The primary canonical copy is `docs/PETNOSE_MVP_API_CONTRACT.md`.

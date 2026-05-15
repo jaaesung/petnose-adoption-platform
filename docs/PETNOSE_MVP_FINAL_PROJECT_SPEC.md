@@ -1,10 +1,10 @@
-# PetNose MVP Final Project Spec
+# PetNose MVP 최종 프로젝트 명세
 
 ## Canonical Baseline
 
-This document defines the active PetNose MVP canonical model as of simplified DBML v2.
+이 문서는 simplified DBML v2 기준의 active PetNose MVP canonical model을 정의한다.
 
-The active domain tables are:
+active domain table은 아래 5개다.
 
 1. `users`
 2. `dogs`
@@ -12,15 +12,15 @@ The active domain tables are:
 4. `verification_logs`
 5. `adoption_posts`
 
-MySQL is the source of truth for account, dog, image metadata, verification history, and adoption post data. Qdrant is a vector search index only. Image binaries are stored as files; MySQL stores relative paths in `dog_images.file_path`.
+MySQL은 account, dog, image metadata, verification history, adoption post data의 source of truth다. Qdrant는 vector search index일 뿐이다. image binary는 파일로 저장하고, MySQL에는 `dog_images.file_path`에 상대 경로만 저장한다.
 
-## Removed From MVP v2
+## MVP v2에서 제외된 범위
 
-Former profile, auth history, report, token, image quality/crop, Firebase, chat, push, reservation, payment, contract, report/admin dashboard, and non-canonical role extension areas are not part of the current canonical MVP v2 schema or API surface.
+과거 separate profile, auth history, report, token, image quality/crop, Firebase, chat, push, reservation, payment, contract, report/admin dashboard, non-canonical role extension 영역은 current canonical MVP v2 schema 또는 API surface에 포함하지 않는다.
 
 ## Users
 
-`users` stores account identity and author display information directly.
+`users`는 account identity와 author display information을 직접 저장한다.
 
 Columns:
 
@@ -34,13 +34,13 @@ Columns:
 - `is_active`
 - `created_at`
 
-Allowed roles are `USER` and `ADMIN`.
+허용 role은 `USER`와 `ADMIN`뿐이다.
 
-`display_name` is nullable. Nose verification is the first step before creating an adoption post, so signup and dog verification must not require the author display name up front. Before an adoption post is created, the service should validate that `users.display_name` exists.
+`display_name`은 nullable이다. 분양글 작성 전에 비문 등록과 검증이 먼저 일어나므로 signup과 dog verification 단계에서 author display name을 요구하지 않는다. 다만 adoption post를 생성하기 전에는 service가 `users.display_name` 존재 여부를 검증해야 한다.
 
 ## Dogs
 
-`dogs` stores basic dog information and lifecycle/service status.
+`dogs`는 기본 강아지 정보와 lifecycle/service status를 저장한다.
 
 Columns:
 
@@ -55,7 +55,7 @@ Columns:
 - `created_at`
 - `updated_at`
 
-`dogs.status` is the dog lifecycle/service status:
+`dogs.status`는 dog lifecycle/service status다.
 
 - `PENDING`
 - `REGISTERED`
@@ -64,15 +64,15 @@ Columns:
 - `ADOPTED`
 - `INACTIVE`
 
-`DUPLICATE_SUSPECTED` remains on `dogs.status` because it blocks adoption post creation. Detailed verification information such as similarity, duplicate candidate, model, and dimension belongs in `verification_logs`.
+`DUPLICATE_SUSPECTED`는 adoption post creation을 막아야 하므로 `dogs.status`에 남긴다. similarity, duplicate candidate, model, dimension 같은 detailed verification information은 `verification_logs`에 속한다.
 
-`dogs` does not store `qdrant_point_id`. The Qdrant point id is always equal to `dogs.id`.
+`dogs`는 `qdrant_point_id`를 저장하지 않는다. Qdrant point id는 항상 `dogs.id`와 같다.
 
 ## Dog Images
 
-`dog_images` stores image metadata and relative file paths only.
+`dog_images`는 image metadata와 relative file path만 저장한다.
 
-Allowed `image_type` values:
+허용 `image_type` 값:
 
 - `NOSE`
 - `PROFILE`
@@ -88,11 +88,11 @@ Columns:
 - `sha256`
 - `uploaded_at`
 
-Image files are not stored in MySQL BLOB columns.
+Image file은 MySQL BLOB column에 저장하지 않는다.
 
 ## Verification Logs
 
-`verification_logs` is the source of truth for nose verification attempts and results.
+`verification_logs`는 nose verification attempt와 result의 source of truth다.
 
 Columns:
 
@@ -108,7 +108,7 @@ Columns:
 - `failure_reason`
 - `created_at`
 
-Allowed `result` values:
+허용 `result` 값:
 
 - `PENDING`
 - `PASSED`
@@ -117,11 +117,11 @@ Allowed `result` values:
 - `QDRANT_SEARCH_FAILED`
 - `QDRANT_UPSERT_FAILED`
 
-The embedding vector itself is not stored in MySQL. Vectors are stored only in Qdrant.
+Embedding vector 자체는 MySQL에 저장하지 않는다. vector는 Qdrant에만 저장한다.
 
 ## Adoption Posts
 
-`adoption_posts` stores adoption listing content and publishing state.
+`adoption_posts`는 adoption listing content와 publishing state를 저장한다.
 
 Columns:
 
@@ -136,7 +136,7 @@ Columns:
 - `created_at`
 - `updated_at`
 
-Allowed `status` values:
+허용 `status` 값:
 
 - `DRAFT`
 - `OPEN`
@@ -144,57 +144,57 @@ Allowed `status` values:
 - `COMPLETED`
 - `CLOSED`
 
-Before creating or opening an adoption post, the service should require a valid author `display_name` and a dog that is eligible for posting. Dogs in `DUPLICATE_SUSPECTED`, `REJECTED`, or `INACTIVE` state are not eligible.
+Adoption post를 생성하거나 `OPEN`으로 전환하기 전에는 유효한 author `display_name`과 post 작성이 가능한 dog가 필요하다. `DUPLICATE_SUSPECTED`, `REJECTED`, `INACTIVE` 상태의 dog는 post 작성 대상이 될 수 없다.
 
-## Handover-Time Dog Nose Verification
+## 인도 시점 비문 확인(Handover-Time Dog Nose Verification)
 
-Handover-time dog nose verification is included in the MVP trust/safety flow after adoption post publication and status management are available.
+인도 시점 비문 확인은 adoption post publication과 status management 이후의 MVP trust/safety flow에 포함된다.
 
-This feature answers the handover question: when an adopter visits the handover location, is the dog in front of them the same dog as the dog registered in the adoption post?
+이 기능은 실제 인도 장소에서 만난 강아지가 adoption post에 등록된 강아지와 같은 개체인지 확인하는 질문에 답한다.
 
-The handover verification API is intentionally different from dog registration:
+handover verification API는 dog registration과 의도적으로 다르다.
 
-- `POST /api/dogs/register` registers a dog and performs duplicate suspicion detection before adoption post creation.
-- `POST /api/adoption-posts/{post_id}/handover-verifications` does not register a dog.
-- It verifies a freshly captured nose image against the dog already linked to an existing adoption post.
-- The expected dog is `adoption_posts.dog_id`.
-- Spring Boot remains the orchestrator for Python Embed and Qdrant calls. Flutter must not call Python Embed, Qdrant, or MySQL directly.
+- `POST /api/dogs/register`는 dog를 등록하고 adoption post creation 전에 duplicate suspicion detection을 수행한다.
+- `POST /api/adoption-posts/{post_id}/handover-verifications`는 dog를 등록하지 않는다.
+- 이 API는 새로 촬영한 nose image를 기존 adoption post에 연결된 dog와 비교한다.
+- expected dog는 `adoption_posts.dog_id`다.
+- Spring Boot가 Python Embed와 Qdrant 호출을 오케스트레이션한다. Flutter는 Python Embed, Qdrant, MySQL을 직접 호출하지 않는다.
 
-The MVP handover verification check is stateless:
+MVP handover verification check는 stateless다.
 
-- It does not save the handover image.
-- It does not create a dog.
-- It does not create a `dog_images` row.
-- It does not create a `verification_logs` row in the current MVP implementation.
-- It does not mutate `adoption_posts.status`.
-- It does not mutate `dogs.status`.
-- It does not automatically complete adoption.
-- Adoption completion remains a separate owner-only status update action.
+- handover image를 저장하지 않는다.
+- dog를 생성하지 않는다.
+- `dog_images` row를 생성하지 않는다.
+- current MVP implementation에서는 `verification_logs` row를 생성하지 않는다.
+- `adoption_posts.status`를 변경하지 않는다.
+- `dogs.status`를 변경하지 않는다.
+- 자동으로 adoption completion을 수행하지 않는다.
+- adoption completion은 별도의 owner-only status update action으로 남는다.
 
-This feature does not add reservation, payment, contract, Firebase, chat, push, report/admin, `SHELTER`, or `ADOPTER` concepts.
+이 기능은 reservation, payment, contract, Firebase, chat, push, report/admin, `SHELTER`, `ADOPTER` concept을 추가하지 않는다.
 
 ## Dog Registration Pipeline Policy
 
-`POST /api/dogs/register` keeps the existing response contract, even though several response fields are now calculated rather than stored on `dogs`.
+`POST /api/dogs/register`는 일부 response field가 이제 `dogs`에 저장되지 않고 계산되더라도 기존 response contract를 유지한다.
 
-Calculated response fields:
+계산되는 response field:
 
 - `qdrant_point_id`
   - normal registration: `dog_id`
   - duplicate suspected: `null`
 - `verification_status`
-  - derived from the latest `verification_logs.result`
+  - latest `verification_logs.result`에서 계산
 - `embedding_status`
-  - derived from the latest `verification_logs.result`
+  - latest `verification_logs.result`에서 계산
 
-Normal registration writes the vector to Qdrant with point id `dogs.id`. Duplicate suspected registration must not upsert an active Qdrant point for the new dog.
+Normal registration은 Qdrant에 point id `dogs.id`로 vector를 저장한다. Duplicate suspected registration은 새 dog에 대한 active Qdrant point를 upsert하지 않아야 한다.
 
-## Final MVP User Flow
+## 최종 MVP 사용자 흐름
 
-1. A `USER` registers a dog with a nose image through `POST /api/dogs/register`.
-2. Duplicate suspicion blocks adoption post creation when `registration_allowed=false`.
-3. A verified dog can be used to create an adoption post.
-4. Public users can view adoption posts without nose image exposure.
-5. At handover time, an authenticated user can upload a freshly captured nose image for stateless verification against the post's expected dog.
-6. A matched handover verification result is a safety signal only.
-7. Completion still happens through the existing owner-only post status update flow.
+1. `USER`가 `POST /api/dogs/register`로 nose image와 함께 dog를 등록한다.
+2. `registration_allowed=false`인 duplicate suspicion은 adoption post creation을 막는다.
+3. 검증된 dog는 adoption post 생성에 사용할 수 있다.
+4. public user는 nose image 노출 없이 adoption post를 볼 수 있다.
+5. 인도 시점에는 authenticated user가 새로 촬영한 nose image를 업로드해 post의 expected dog와 stateless verification을 수행할 수 있다.
+6. matched handover verification result는 safety signal일 뿐이다.
+7. completion은 기존 owner-only post status update flow로 처리한다.

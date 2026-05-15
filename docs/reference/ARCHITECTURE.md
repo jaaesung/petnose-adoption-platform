@@ -1,5 +1,10 @@
 # 시스템 아키텍처
 
+> 문서 성격: 보조 참고 문서(Task Reference)
+>
+> runtime architecture, service responsibility, Spring Boot/Python Embed/Qdrant/MySQL/Nginx 경계를 볼 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
 ## 문서 목적
 
 이 문서는 PetNose 플랫폼의 런타임 구조, 서비스 간 책임 분리, 주요 요청 흐름을 기술합니다.  
@@ -41,7 +46,7 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 
 - **메인 오케스트레이터.** 모든 비즈니스 로직을 여기서 처리합니다.
 - 사용자 인증/인가 (JWT)
-- 강아지 등록, 입양 게시글 관리, 신고 처리
+- 강아지 등록, 입양 게시글 관리, 인도 시점 비문 확인
 - MySQL 읽기/쓰기
 - Python 임베딩 서비스 호출 및 Qdrant 벡터 저장/검색 호출
 - 이미지 업로드 처리 (`uploads/` 볼륨)
@@ -58,12 +63,12 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 - **벡터 검색 전용.** Spring Boot가 직접 HTTP API로 호출합니다.
 - 비문 임베딩 저장 및 top-K 유사도 검색
 - 데이터 원본(Source of Truth)은 MySQL이며, Qdrant는 검색 인덱스 역할입니다.
-- 자세한 내용은 [DB_VECTOR_ROLE.md](DB_VECTOR_ROLE.md)를 참고하세요.
+- 자세한 내용은 [STORAGE_AND_VECTOR_BOUNDARY.md](STORAGE_AND_VECTOR_BOUNDARY.md)를 참고하세요.
 
 ### MySQL
 
 - **관계형 데이터의 Source of Truth.**
-- 사용자, 강아지, 입양 게시글, 인증 로그 등 모든 도메인 데이터를 보관합니다.
+- `users`, `dogs`, `dog_images`, `verification_logs`, `adoption_posts` 데이터를 보관합니다.
 
 ### Nginx
 
@@ -72,7 +77,7 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 - **정적 파일 직접 서빙**: `GET /files/{path}` → `uploads_data` 볼륨에서 직접 읽어 반환합니다.  
   Spring Boot를 경유하지 않으므로 파일 조회 성능이 향상됩니다.
 - 향후 HTTPS 설정 시 이 레이어에서 SSL을 종료합니다.
-- 파일 저장 경로·URL 규칙 전체: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
+- 파일 저장 경로·URL 규칙 전체: [FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
 ---
 
@@ -85,28 +90,30 @@ Flutter → POST /api/dogs/register (이미지 포함)
   → Spring Boot: 이미지 저장 (uploads 볼륨, 상대경로 DB 기록)
   → Spring Boot → Python Embed: POST /embed (이미지 바이트)
   ← Python Embed: { "vector": [...] }
-  → Spring Boot → Qdrant: PUT /collections/dog_nose_embeddings/points
+  → Spring Boot → Qdrant: point id = dogs.id 로 vector upsert
   → Spring Boot → MySQL: INSERT INTO dogs, dog_images (file_path = 상대경로)
-  ← Spring Boot → Flutter: { "dog_id": "...", "image_url": "/files/dogs/.../nose/..." }
+  ← Spring Boot → Flutter: { "dog_id": "...", "nose_image_url": "/files/dogs/.../nose/..." }
 ```
 
-저장 경로 규칙 및 URL 형식: [docs/FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
+저장 경로 규칙 및 URL 형식: [FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)
 
-### 비문 인증 (동일 개체 확인)
+### 인도 시점 비문 확인
 
 ```
-Flutter → POST /api/dogs/verify (이미지 포함)
+Flutter → POST /api/adoption-posts/{post_id}/handover-verifications (이미지 포함)
   → Spring Boot → Python Embed: 임베딩 변환
   → Spring Boot → Qdrant: 유사도 검색 (top-K)
-  → Spring Boot: 결과 해석, MySQL에서 개체 정보 조회
-  ← Spring Boot → Flutter: { "matched": true, "dog": {...} }
+  → Spring Boot: adoption_posts.dog_id 기준 expected dog와 비교
+  ← Spring Boot → Flutter: { "matched": true, "decision": "MATCHED", ... }
 ```
+
+이 흐름은 handover image를 저장하지 않고, `verification_logs` row를 생성하지 않으며, `adoption_posts.status` 또는 `dogs.status`를 변경하지 않습니다.
 
 ---
 
 ## 운영 원칙
 
 - Spring Boot가 Python과 Qdrant를 호출하는 유일한 주체입니다. Flutter는 Spring Boot만 바라봅니다.
-- MySQL과 Qdrant 동기화 실패 처리 방식은 [DB_VECTOR_ROLE.md](DB_VECTOR_ROLE.md)를 따릅니다.
+- MySQL과 Qdrant 동기화 실패 처리 방식은 [STORAGE_AND_VECTOR_BOUNDARY.md](STORAGE_AND_VECTOR_BOUNDARY.md)를 따릅니다.
 - 모든 서비스는 Docker Compose 내부 네트워크로 격리됩니다.
 - 환경별 설정은 `compose.dev.yaml` / `compose.prod.yaml`로 오버라이드합니다.

@@ -1,9 +1,14 @@
-# Dev CD Validation Log
+# Dev CD 검증 로그
 
-## Develop Auto CD Validation
+> 문서 성격: 운영 증거(Ops Evidence)
+>
+> shared dev CD 검증 이력을 확인할 때 읽는다.
+> active canonical 문서와 충돌하면 active canonical 문서가 우선한다.
+
+## Develop Auto CD 검증
 
 - Date: 2026-05-06
-- Purpose: validate PR -> develop -> CI -> GHCR publish -> shared dev CD
+- Purpose: PR -> develop -> CI -> GHCR publish -> shared dev CD 검증
 - Result: PASS
 - Evidence:
   - PR CI: PASS

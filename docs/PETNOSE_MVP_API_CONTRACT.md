@@ -1,17 +1,17 @@
-# PetNose MVP API Contract
+# PetNose MVP API 계약
 
-## Scope
+## 문서 범위
 
-This is the active MVP API contract for the simplified DBML v2 canonical model.
+이 문서는 simplified DBML v2 canonical model 기준의 active MVP API contract다.
 
 Base URL: `http://<host>/api`
 
-This contract records the Flutter MVP flow against the current backend implementation. It does not introduce Firebase, chat, push, expanded profile tables, report APIs, refresh tokens, or any non-canonical role concept.
+이 문서는 current backend implementation에 맞춘 Flutter MVP flow를 기록한다. Firebase, chat, push, expanded profile table, report API, refresh token, non-canonical role concept을 추가하지 않는다.
 
 ## Canonical Response Rules
 
-- JSON response fields use `snake_case`.
-- Common error responses use the shape below:
+- JSON response field는 `snake_case`를 사용한다.
+- 공통 error response는 아래 shape를 사용한다.
 
 ```json
 {
@@ -23,37 +23,37 @@ This contract records the Flutter MVP flow against the current backend implement
 }
 ```
 
-- MVP roles are `USER` and `ADMIN` only.
-- `users` owns `display_name`, `contact_phone`, `region`, and `is_active` directly.
-- MySQL is the source of truth. Qdrant is a nose embedding vector index only.
-- `dog_images.file_path` stores a path relative to the upload root.
-- `qdrant_point_id`, `verification_status`, and `embedding_status` are API-calculated fields, not DB columns.
-- Public adoption post list/detail responses must not expose `nose_image_url`.
-- Owner-scoped dog registration responses may return the newly submitted dog's own `nose_image_url`.
-- `top_match` must not expose a raw `nose_image_url`.
-- Handover verification responses must not expose `nose_image_url`, `top_matched_dog_id`, another dog's `dog_id`, Qdrant payload details, or `author_user_id`.
+- MVP role은 `USER`와 `ADMIN`만 사용한다.
+- `users`가 `display_name`, `contact_phone`, `region`, `is_active`를 직접 가진다.
+- MySQL은 source of truth다. Qdrant는 nose embedding vector index일 뿐이다.
+- `dog_images.file_path`는 upload root 기준 상대 경로를 저장한다.
+- `qdrant_point_id`, `verification_status`, `embedding_status`는 API-calculated field이며 DB column이 아니다.
+- public adoption post list/detail response는 `nose_image_url`을 노출하지 않는다.
+- owner-scoped dog registration response는 새로 제출한 dog 자신의 `nose_image_url`을 반환할 수 있다.
+- `top_match`는 raw `nose_image_url`을 노출하지 않는다.
+- handover verification response는 `nose_image_url`, `top_matched_dog_id`, 다른 dog의 `dog_id`, Qdrant payload details, `author_user_id`를 노출하지 않는다.
 
 ## Flutter MVP Flow Readiness
 
 | Step | Endpoint or branch | Current status | Flutter dependency |
 | --- | --- | --- | --- |
-| 1 | `POST /api/dogs/register` | Implemented | Returns registration result fields listed below. |
-| 2 | `registration_allowed=false` | Implemented | Branch to duplicate suspected screen and block post creation. |
-| 3 | `registration_allowed=true` | Implemented | Use `dog_id` for post creation. |
-| 4 | `GET /api/users/me` | Implemented | Read profile readiness fields. |
-| 5 | `PATCH /api/users/me/profile` | Implemented | Fill missing `display_name`, plus optional phone/region. |
-| 6 | `POST /api/adoption-posts` | Implemented | Creates `DRAFT` or `OPEN` post for verified owner dog. |
-| 7 | `GET /api/adoption-posts` | Implemented | Renders public post list without nose image. |
-| 8 | `GET /api/adoption-posts/{post_id}` | Implemented | Renders public post detail without nose image. |
-| 9 | `GET /api/adoption-posts/me` | Implemented | Lists only the current user's posts. |
-| 10 | `PATCH /api/adoption-posts/{post_id}/status` | Implemented | Owner-only post status management. |
-| 11 | `POST /api/adoption-posts/{post_id}/handover-verifications` | Implemented | Included in the MVP trust/safety flow as a stateless handover-time identity check. |
+| 1 | `POST /api/dogs/register` | 구현됨 | 아래 registration result field를 반환한다. |
+| 2 | `registration_allowed=false` | 구현됨 | duplicate suspected 화면으로 분기하고 post creation을 막는다. |
+| 3 | `registration_allowed=true` | 구현됨 | post creation에 `dog_id`를 사용한다. |
+| 4 | `GET /api/users/me` | 구현됨 | profile readiness field를 읽는다. |
+| 5 | `PATCH /api/users/me/profile` | 구현됨 | 누락된 `display_name`과 선택적 phone/region을 채운다. |
+| 6 | `POST /api/adoption-posts` | 구현됨 | verified owner dog로 `DRAFT` 또는 `OPEN` post를 만든다. |
+| 7 | `GET /api/adoption-posts` | 구현됨 | nose image 없이 public post list를 렌더링한다. |
+| 8 | `GET /api/adoption-posts/{post_id}` | 구현됨 | nose image 없이 public post detail을 렌더링한다. |
+| 9 | `GET /api/adoption-posts/me` | 구현됨 | current user의 post만 나열한다. |
+| 10 | `PATCH /api/adoption-posts/{post_id}/status` | 구현됨 | owner-only post status management를 수행한다. |
+| 11 | `POST /api/adoption-posts/{post_id}/handover-verifications` | 구현됨 | stateless handover-time identity check로 MVP trust/safety flow에 포함된다. |
 
-The handover verification endpoint is part of the MVP trust/safety flow. Wider API expansion beyond this contract remains follow-up scope.
+handover verification endpoint는 MVP trust/safety flow의 일부다. 이 contract 밖의 더 넓은 API 확장은 follow-up scope로 남긴다.
 
 ## Users
 
-### Get Current User
+### Current User 조회
 
 ```http
 GET /api/users/me
@@ -84,9 +84,9 @@ Flutter-required fields:
 - `region`
 - `is_active`
 
-`display_name`, `contact_phone`, and `region` may be `null`, but the field names are part of the response contract. `created_at` is not part of the current `GET /api/users/me` response.
+`display_name`, `contact_phone`, `region`은 `null`일 수 있지만 field name 자체는 response contract에 포함된다. `created_at`은 current `GET /api/users/me` response에 포함하지 않는다.
 
-### Update User Profile
+### User Profile 수정
 
 ```http
 PATCH /api/users/me/profile
@@ -117,15 +117,15 @@ Response `200`:
 
 Contract notes:
 
-- At least one of `display_name`, `contact_phone`, or `region` must be present.
-- Omitted fields keep their current value.
-- Explicit `null` clears the corresponding profile field.
-- Length limits follow the canonical `users` columns: `display_name <= 150`, `contact_phone <= 30`, `region <= 100`.
-- Adoption post creation requires a non-blank `display_name`.
+- `display_name`, `contact_phone`, `region` 중 하나 이상은 있어야 한다.
+- 생략한 field는 현재 값을 유지한다.
+- 명시적 `null`은 해당 profile field를 비운다.
+- length limit은 canonical `users` column을 따른다: `display_name <= 150`, `contact_phone <= 30`, `region <= 100`.
+- adoption post creation에는 non-blank `display_name`이 필요하다.
 
 ## Dog Registration
 
-### Register Dog With Nose Image
+### Nose Image로 Dog 등록
 
 ```http
 POST /api/dogs/register
@@ -135,14 +135,14 @@ Authorization: Bearer <JWT>
 
 Authentication policy:
 
-- JWT principal is preferred.
-- If an `Authorization: Bearer <JWT>` header is present, the JWT principal wins over any submitted `user_id`.
-- If the JWT is invalid or expired, the request fails and does not fall back to `user_id`.
-- If the JWT header is absent, `user_id` remains a temporary local/dev fallback.
+- JWT principal을 우선한다.
+- `Authorization: Bearer <JWT>` header가 있으면 JWT principal이 제출된 `user_id`보다 우선한다.
+- JWT가 invalid 또는 expired이면 request는 실패하며 `user_id`로 fallback하지 않는다.
+- JWT header가 없을 때만 `user_id`가 temporary local/dev fallback으로 남는다.
 
 Form fields:
 
-- `user_id`: number, temporary local/dev fallback until full principal-only registration
+- `user_id`: number, full principal-only registration 전까지 temporary local/dev fallback
 - `name`: string
 - `breed`: string
 - `gender`: `MALE`, `FEMALE`, or `UNKNOWN`
@@ -213,29 +213,29 @@ Response `200`, duplicate suspected:
 
 Duplicate suspected contract:
 
-- `registration_allowed` is `false`.
-- `status` is `DUPLICATE_SUSPECTED`.
-- `verification_status` is `DUPLICATE_SUSPECTED`.
-- `embedding_status` is `SKIPPED_DUPLICATE`.
-- `qdrant_point_id` is `null`.
-- `max_similarity_score` is the highest returned match score.
-- `top_match` contains only `dog_id`, `similarity_score`, and `breed`.
-- `top_match` must not contain `nose_image_url`.
-- Top-level `nose_image_url` is the newly submitted dog image in an owner-scoped registration response and is not a public exposure.
-- `message` is safe for Flutter duplicate suspected screen copy.
+- `registration_allowed`는 `false`다.
+- `status`는 `DUPLICATE_SUSPECTED`다.
+- `verification_status`는 `DUPLICATE_SUSPECTED`다.
+- `embedding_status`는 `SKIPPED_DUPLICATE`다.
+- `qdrant_point_id`는 `null`이다.
+- `max_similarity_score`는 반환된 match 중 가장 높은 score다.
+- `top_match`는 `dog_id`, `similarity_score`, `breed`만 포함한다.
+- `top_match`는 `nose_image_url`을 포함하지 않는다.
+- top-level `nose_image_url`은 owner-scoped registration response에서 새로 제출한 dog image이며 public exposure가 아니다.
+- `message`는 Flutter duplicate suspected screen copy로 사용할 수 있다.
 
 Calculation policy:
 
-- `qdrant_point_id` is calculated as `dog_id` for normal registration and `null` for duplicate suspected registration.
-- `verification_status` is calculated from the latest verification result.
-- `embedding_status` is calculated from the latest verification result.
-- Similarity, duplicate candidate, model, dimension, and failure metadata are stored in verification history.
-- The embedding vector is stored only in Qdrant.
+- `qdrant_point_id`는 normal registration에서 `dog_id`, duplicate suspected registration에서 `null`로 계산한다.
+- `verification_status`는 latest verification result에서 계산한다.
+- `embedding_status`는 latest verification result에서 계산한다.
+- similarity, duplicate candidate, model, dimension, failure metadata는 verification history에 저장한다.
+- embedding vector는 Qdrant에만 저장한다.
 
 Errors:
 
 - `400`: invalid request fields
-- `401`: missing, malformed, invalid, or expired JWT where JWT auth is required
+- `401`: JWT auth가 필요한 곳에서 missing, malformed, invalid, or expired JWT
 - `403`: inactive user
 - `404`: user or dog image metadata not found
 - `422`: image or embedding input rejected
@@ -243,7 +243,7 @@ Errors:
 
 ## Adoption Posts
 
-### Create Adoption Post
+### Adoption Post 생성
 
 ```http
 POST /api/adoption-posts
@@ -278,16 +278,16 @@ Response `201`:
 
 Contract notes:
 
-- JWT principal is required.
-- The dog must belong to the current user.
-- `users.display_name` must be non-blank before creating a post.
-- The dog must be `REGISTERED`.
-- The latest verification result must be `PASSED`.
-- Dogs in `DUPLICATE_SUSPECTED`, `REJECTED`, or `INACTIVE` state are not eligible.
-- A dog cannot already have an active post in `DRAFT`, `OPEN`, or `RESERVED`.
-- Create accepts `DRAFT` or `OPEN`; omitted `status` defaults to `DRAFT`.
+- JWT principal이 필요하다.
+- dog는 current user 소유여야 한다.
+- post 생성 전 `users.display_name`은 non-blank여야 한다.
+- dog는 `REGISTERED`여야 한다.
+- latest verification result는 `PASSED`여야 한다.
+- `DUPLICATE_SUSPECTED`, `REJECTED`, `INACTIVE` 상태의 dog는 대상이 될 수 없다.
+- 같은 dog에 `DRAFT`, `OPEN`, `RESERVED` 상태의 active post가 이미 있으면 안 된다.
+- create는 `DRAFT` 또는 `OPEN`을 받는다. `status`를 생략하면 기본값은 `DRAFT`다.
 
-### List Public Adoption Posts
+### 공개 분양글 목록(Public Adoption Post List)
 
 ```http
 GET /api/adoption-posts?status=OPEN&page=0&size=20
@@ -295,9 +295,9 @@ GET /api/adoption-posts?status=OPEN&page=0&size=20
 
 Query parameters:
 
-- `status`: optional, defaults to `OPEN`; supported values are `OPEN`, `RESERVED`, and `COMPLETED`.
-- `page`: optional, zero-based page number, defaults to `0`.
-- `size`: optional page size, defaults to `20`, maximum `100`.
+- `status`: optional, 기본값은 `OPEN`; 지원 값은 `OPEN`, `RESERVED`, `COMPLETED`.
+- `page`: optional, zero-based page number, 기본값은 `0`.
+- `size`: optional page size, 기본값은 `20`, 최대 `100`.
 
 Public feed status display mapping:
 
@@ -335,16 +335,16 @@ Response `200`:
 
 Contract notes:
 
-- Public list status defaults to `OPEN`.
-- Public list accepts `OPEN`, `RESERVED`, or `COMPLETED`.
-- `DRAFT` and `CLOSED` are not valid public list statuses.
-- `verification_status` is included for Flutter display.
-- `profile_image_url` may be exposed.
-- `nose_image_url` must not be exposed.
-- Invalid `status` returns `INVALID_POST_STATUS`.
-- Invalid `page` or `size` returns `INVALID_PAGE_REQUEST`.
+- public list `status` 기본값은 `OPEN`이다.
+- public list는 `OPEN`, `RESERVED`, `COMPLETED`를 받는다.
+- `DRAFT`와 `CLOSED`는 public list status로 유효하지 않다.
+- `verification_status`는 Flutter display를 위해 포함한다.
+- `profile_image_url`은 노출할 수 있다.
+- `nose_image_url`은 노출하지 않는다.
+- invalid `status`는 `INVALID_POST_STATUS`를 반환한다.
+- invalid `page` 또는 `size`는 `INVALID_PAGE_REQUEST`를 반환한다.
 
-### Get Public Adoption Post Detail
+### 공개 분양글 상세(Public Adoption Post Detail)
 
 ```http
 GET /api/adoption-posts/{post_id}
@@ -377,14 +377,14 @@ Response `200`:
 
 Contract notes:
 
-- Detail is public only for `OPEN`, `RESERVED`, and `COMPLETED` posts.
-- `verification_status` is included for Flutter display.
-- `profile_image_url` may be exposed.
-- `nose_image_url` must not be exposed.
-- Missing posts return `POST_NOT_FOUND`.
-- Non-public posts return `POST_NOT_PUBLIC`.
+- detail은 `OPEN`, `RESERVED`, `COMPLETED` post에 대해서만 public이다.
+- `verification_status`는 Flutter display를 위해 포함한다.
+- `profile_image_url`은 노출할 수 있다.
+- `nose_image_url`은 노출하지 않는다.
+- missing post는 `POST_NOT_FOUND`를 반환한다.
+- non-public post는 `POST_NOT_PUBLIC`을 반환한다.
 
-### List Current User's Adoption Posts
+### Current User의 Adoption Posts 목록
 
 ```http
 GET /api/adoption-posts/me?status=OPEN&page=0&size=20
@@ -393,9 +393,9 @@ Authorization: Bearer <JWT>
 
 Query parameters:
 
-- `status`: optional; supported values are `DRAFT`, `OPEN`, `RESERVED`, `COMPLETED`, and `CLOSED`.
-- `page`: optional, zero-based page number, defaults to `0`.
-- `size`: optional page size, defaults to `20`, maximum `100`.
+- `status`: optional; 지원 값은 `DRAFT`, `OPEN`, `RESERVED`, `COMPLETED`, `CLOSED`.
+- `page`: optional, zero-based page number, 기본값은 `0`.
+- `size`: optional page size, 기본값은 `20`, 최대 `100`.
 
 Response `200`:
 
@@ -427,15 +427,15 @@ Response `200`:
 
 Contract notes:
 
-- Bearer JWT authorization is required.
-- The response returns only posts owned by the current user.
-- Omitting `status` returns all statuses owned by the current user.
-- `nose_image_url` must not be exposed.
-- Invalid `status` returns `INVALID_POST_STATUS`.
-- Invalid `page` or `size` returns `INVALID_PAGE_REQUEST`.
-- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
+- Bearer JWT authorization이 필요하다.
+- response는 current user가 소유한 post만 반환한다.
+- `status`를 생략하면 current user가 소유한 모든 status를 반환한다.
+- `nose_image_url`은 노출하지 않는다.
+- invalid `status`는 `INVALID_POST_STATUS`를 반환한다.
+- invalid `page` 또는 `size`는 `INVALID_PAGE_REQUEST`를 반환한다.
+- missing, malformed, invalid, or expired JWT는 `UNAUTHORIZED`를 반환한다.
 
-### Update Adoption Post Status
+### Adoption Post Status 수정
 
 ```http
 PATCH /api/adoption-posts/{post_id}/status
@@ -480,20 +480,20 @@ Allowed transitions:
 
 Contract notes:
 
-- Bearer JWT authorization is required.
-- Only the post owner may update status.
-- `COMPLETED` and `CLOSED` are terminal states.
-- `COMPLETED` sets `dogs.status` to `ADOPTED`.
-- `CLOSED` does not set `dogs.status` to `ADOPTED`.
-- Same-status PATCH is implemented as a no-op and returns the current post status response.
-- `DRAFT` -> `OPEN` validates the same publish eligibility as post creation.
-- Missing posts return `POST_NOT_FOUND`.
-- Non-owner updates return `POST_OWNER_MISMATCH`.
-- Invalid `status` returns `INVALID_POST_STATUS`.
-- Invalid transitions return `INVALID_STATUS_TRANSITION`.
-- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
+- Bearer JWT authorization이 필요하다.
+- post owner만 status를 수정할 수 있다.
+- `COMPLETED`와 `CLOSED`는 terminal state다.
+- `COMPLETED`는 `dogs.status`를 `ADOPTED`로 설정한다.
+- `CLOSED`는 `dogs.status`를 `ADOPTED`로 설정하지 않는다.
+- same-status PATCH는 no-op으로 구현되어 현재 post status response를 반환한다.
+- `DRAFT` -> `OPEN`은 post creation과 같은 publish eligibility를 검증한다.
+- missing post는 `POST_NOT_FOUND`를 반환한다.
+- non-owner update는 `POST_OWNER_MISMATCH`를 반환한다.
+- invalid `status`는 `INVALID_POST_STATUS`를 반환한다.
+- invalid transition은 `INVALID_STATUS_TRANSITION`을 반환한다.
+- missing, malformed, invalid, or expired JWT는 `UNAUTHORIZED`를 반환한다.
 
-### Handover-Time Dog Nose Verification
+### 인도 시점 비문 확인(Handover-Time Dog Nose Verification)
 
 ```http
 POST /api/adoption-posts/{post_id}/handover-verifications
@@ -507,39 +507,39 @@ Form-data:
 
 Purpose:
 
-- Stateless handover-time identity verification.
-- Verifies whether a freshly captured dog nose image matches the dog linked to `adoption_posts.dog_id`.
-- Does not create or update persistent records.
-- Does not save the handover image.
-- Does not create a dog.
-- Does not create a `dog_images` row.
-- Does not create a `verification_logs` row in the current MVP implementation.
-- Does not mutate `adoption_posts.status` or `dogs.status`.
-- Does not complete adoption automatically.
-- Adoption completion remains the existing owner-only status update action.
+- stateless handover-time identity verification이다.
+- 새로 촬영한 dog nose image가 `adoption_posts.dog_id`에 연결된 dog와 일치하는지 확인한다.
+- persistent record를 만들거나 수정하지 않는다.
+- handover image를 저장하지 않는다.
+- dog를 생성하지 않는다.
+- `dog_images` row를 생성하지 않는다.
+- current MVP implementation에서는 `verification_logs` row를 생성하지 않는다.
+- `adoption_posts.status` 또는 `dogs.status`를 변경하지 않는다.
+- 자동으로 adoption completion을 수행하지 않는다.
+- adoption completion은 기존 owner-only status update action으로 남는다.
 
 Authorization:
 
-- Bearer JWT authorization is required.
-- The current user must be active.
-- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
-- A token that resolves to a deleted or missing user returns `USER_NOT_FOUND`.
-- Inactive current user returns HTTP `403` with `USER_INACTIVE`.
-- Since the current MVP has no reservation/applicant table, this endpoint is not owner-only. It is an authenticated user-facing safety check for handover verification.
-- Do not introduce an `ADOPTER` role or reservation ownership rules.
+- Bearer JWT authorization이 필요하다.
+- current user는 active 상태여야 한다.
+- missing, malformed, invalid, or expired JWT는 `UNAUTHORIZED`를 반환한다.
+- token이 deleted 또는 missing user로 resolve되면 `USER_NOT_FOUND`를 반환한다.
+- inactive current user는 HTTP `403`과 `USER_INACTIVE`를 반환한다.
+- current MVP에는 reservation/applicant table이 없으므로 이 endpoint는 owner-only가 아니다. handover verification을 위한 authenticated user-facing safety check다.
+- `ADOPTER` role 또는 reservation ownership rule을 도입하지 않는다.
 
 Post status policy:
 
 - Allowed statuses: `OPEN`, `RESERVED`.
 - Rejected statuses: `DRAFT`, `COMPLETED`, `CLOSED`.
-- Rejected statuses return `POST_NOT_VERIFIABLE` with HTTP `400`.
+- rejected status는 HTTP `400`과 `POST_NOT_VERIFIABLE`을 반환한다.
 
 Expected dog policy:
 
-- `expected_dog_id` is `adoption_posts.dog_id`.
-- The expected dog must exist; otherwise return `DOG_NOT_FOUND`.
-- The expected dog must be `REGISTERED`.
-- If the expected dog is not `REGISTERED`, return `DOG_NOT_VERIFIED`.
+- `expected_dog_id`는 `adoption_posts.dog_id`다.
+- expected dog가 존재하지 않으면 `DOG_NOT_FOUND`를 반환한다.
+- expected dog는 `REGISTERED`여야 한다.
+- expected dog가 `REGISTERED`가 아니면 `DOG_NOT_VERIFIED`를 반환한다.
 
 Normal `200` decision values:
 
@@ -625,26 +625,26 @@ Decision algorithm:
 - `expected_dog_id = adoption_posts.dog_id`
 - `top_result = first Qdrant search result`
 
-If there is no Qdrant result:
+Qdrant result가 없는 경우:
 
 - `decision = NO_MATCH_CANDIDATE`
 - `matched = false`
 - `similarity_score = null`
 - `top_match_is_expected = false`
 
-If `top_result.dog_id == expected_dog_id` and `score >= match_threshold`:
+`top_result.dog_id == expected_dog_id`이고 `score >= match_threshold`인 경우:
 
 - `decision = MATCHED`
 - `matched = true`
 - `top_match_is_expected = true`
 
-If `top_result.dog_id == expected_dog_id` and `ambiguous_threshold <= score < match_threshold`:
+`top_result.dog_id == expected_dog_id`이고 `ambiguous_threshold <= score < match_threshold`인 경우:
 
 - `decision = AMBIGUOUS`
 - `matched = false`
 - `top_match_is_expected = true`
 
-Otherwise:
+그 외의 경우:
 
 - `decision = NOT_MATCHED`
 - `matched = false`
@@ -653,54 +653,54 @@ Otherwise:
 
 Privacy rules:
 
-- Public/user-facing responses must not expose `nose_image_url`.
-- The handover verification response must not expose `top_matched_dog_id`.
-- The handover verification response must not expose another dog's `dog_id`.
-- The handover verification response must not expose Qdrant payload details.
-- The handover verification response must not expose `author_user_id`.
-- `expected_dog_id` may be exposed because the adoption post workflow already references the dog.
-- `similarity_score`, `threshold`, `ambiguous_threshold`, `model`, `dimension`, and `top_match_is_expected` may be exposed.
+- public/user-facing response는 `nose_image_url`을 노출하지 않는다.
+- handover verification response는 `top_matched_dog_id`를 노출하지 않는다.
+- handover verification response는 다른 dog의 `dog_id`를 노출하지 않는다.
+- handover verification response는 Qdrant payload details를 노출하지 않는다.
+- handover verification response는 `author_user_id`를 노출하지 않는다.
+- `expected_dog_id`는 adoption post workflow가 이미 dog를 참조하므로 노출할 수 있다.
+- `similarity_score`, `threshold`, `ambiguous_threshold`, `model`, `dimension`, `top_match_is_expected`는 노출할 수 있다.
 
 Config defaults:
 
 - `match_threshold = 0.92`
 - `ambiguous_threshold = 0.88`
 - `top_k = 5`
-- These values are runtime configuration, not DB fields.
+- 이 값들은 runtime configuration이며 DB field가 아니다.
 
 Failure behavior:
 
-- Missing or empty `nose_image` returns the common error response with `NOSE_IMAGE_REQUIRED`.
-- Invalid handover image bytes or embed upstream rejection returns the common error response with `INVALID_NOSE_IMAGE`.
-- Unavailable embed service returns the common error response with `EMBED_SERVICE_UNAVAILABLE`.
-- Empty embedding output returns the common error response with `EMPTY_EMBEDDING`.
-- Embedding dimension mismatch returns the common error response with `EMBEDDING_DIMENSION_MISMATCH`.
-- Qdrant search failure returns the common error response with `QDRANT_SEARCH_FAILED`.
+- missing 또는 empty `nose_image`는 common error response와 `NOSE_IMAGE_REQUIRED`를 반환한다.
+- invalid handover image bytes 또는 embed upstream rejection은 common error response와 `INVALID_NOSE_IMAGE`를 반환한다.
+- unavailable embed service는 common error response와 `EMBED_SERVICE_UNAVAILABLE`을 반환한다.
+- empty embedding output은 common error response와 `EMPTY_EMBEDDING`을 반환한다.
+- embedding dimension mismatch는 common error response와 `EMBEDDING_DIMENSION_MISMATCH`를 반환한다.
+- Qdrant search failure는 common error response와 `QDRANT_SEARCH_FAILED`를 반환한다.
 
 ### Adoption Post Error Codes
 
-- `POST_NOT_FOUND`: adoption post does not exist.
-- `POST_NOT_PUBLIC`: adoption post exists but is not publicly visible.
-- `POST_NOT_VERIFIABLE`: adoption post exists but its current status cannot be handover-verified.
-- `POST_OWNER_MISMATCH`: current user does not own the post.
-- `DOG_NOT_FOUND`: dog referenced by the adoption post does not exist.
-- `DOG_NOT_VERIFIED`: expected dog is missing required verified/registered eligibility.
-- `INVALID_POST_STATUS`: unsupported or malformed status value.
-- `INVALID_STATUS_TRANSITION`: requested status transition is not allowed.
-- `INVALID_PAGE_REQUEST`: page or size parameter is outside the supported range.
-- `NOSE_IMAGE_REQUIRED`: handover nose image multipart field is missing or empty.
-- `INVALID_NOSE_IMAGE`: handover nose image cannot be processed.
-- `EMBED_SERVICE_UNAVAILABLE`: embedding service cannot be reached or used.
-- `EMPTY_EMBEDDING`: embedding service returned no vector.
-- `EMBEDDING_DIMENSION_MISMATCH`: embedding dimension does not match the configured Qdrant vector dimension.
-- `QDRANT_SEARCH_FAILED`: Qdrant vector search failed.
-- `UNAUTHORIZED`: JWT authorization is missing, malformed, invalid, or expired.
-- `USER_NOT_FOUND`: JWT subject does not map to an existing user.
-- `USER_INACTIVE`: JWT subject maps to an inactive user.
+- `POST_NOT_FOUND`: adoption post가 존재하지 않는다.
+- `POST_NOT_PUBLIC`: adoption post는 존재하지만 public visible 상태가 아니다.
+- `POST_NOT_VERIFIABLE`: adoption post는 존재하지만 current status에서 handover verification을 수행할 수 없다.
+- `POST_OWNER_MISMATCH`: current user가 post owner가 아니다.
+- `DOG_NOT_FOUND`: adoption post가 참조하는 dog가 존재하지 않는다.
+- `DOG_NOT_VERIFIED`: expected dog가 required verified/registered eligibility를 만족하지 않는다.
+- `INVALID_POST_STATUS`: 지원하지 않거나 malformed status value다.
+- `INVALID_STATUS_TRANSITION`: 요청한 status transition이 허용되지 않는다.
+- `INVALID_PAGE_REQUEST`: page 또는 size parameter가 supported range 밖이다.
+- `NOSE_IMAGE_REQUIRED`: handover nose image multipart field가 없거나 비어 있다.
+- `INVALID_NOSE_IMAGE`: handover nose image를 처리할 수 없다.
+- `EMBED_SERVICE_UNAVAILABLE`: embedding service에 접근할 수 없거나 사용할 수 없다.
+- `EMPTY_EMBEDDING`: embedding service가 vector를 반환하지 않았다.
+- `EMBEDDING_DIMENSION_MISMATCH`: embedding dimension이 configured Qdrant vector dimension과 맞지 않는다.
+- `QDRANT_SEARCH_FAILED`: Qdrant vector search가 실패했다.
+- `UNAUTHORIZED`: JWT authorization이 missing, malformed, invalid, or expired 상태다.
+- `USER_NOT_FOUND`: JWT subject가 existing user로 매핑되지 않는다.
+- `USER_INACTIVE`: JWT subject가 inactive user로 매핑된다.
 
 ### Local Verification Examples
 
-Replace `<JWT>` and `<post_id>` with local test values.
+`<JWT>`와 `<post_id>`를 local test value로 바꿔 사용한다.
 
 ```bash
 curl "http://localhost/api/adoption-posts?status=OPEN&page=0&size=20"
@@ -727,13 +727,13 @@ curl -X POST "http://localhost/api/adoption-posts/<post_id>/handover-verificatio
 
 ## JWT Principal Follow-up
 
-`POST /api/dogs/register` already resolves the owner from JWT first at the controller boundary, but it still keeps the `user_id` local/dev fallback and passes an owner id into `DogRegistrationService`. This branch does not change `DogRegistrationService`.
+`POST /api/dogs/register`는 controller boundary에서 이미 JWT로 owner를 먼저 resolve하지만, 아직 `user_id` local/dev fallback을 유지하고 owner id를 `DogRegistrationService`에 전달한다. 이 branch는 `DogRegistrationService`를 변경하지 않는다.
 
-Before hardening adoption post creation beyond MVP/dev usage, remove the `user_id` fallback from dog registration or gate it behind an explicit local profile. This keeps the dog owner established by the same JWT principal that `POST /api/adoption-posts` already requires.
+MVP/dev usage를 넘어 adoption post creation을 hardening하기 전에는 dog registration에서 `user_id` fallback을 제거하거나 explicit local profile 뒤로 제한한다. 이렇게 해야 dog owner가 `POST /api/adoption-posts`와 같은 JWT principal 기준으로 확립된다.
 
 ## Removed APIs and Concepts
 
-The old separate publisher/profile variants and report/token extension areas are not part of the current MVP v2 contract. Do not introduce:
+old separate publisher/profile variant와 report/token extension 영역은 current MVP v2 contract에 포함하지 않는다. 아래 항목을 도입하지 않는다.
 
 - `SHELTER` or `ADOPTER` roles
 - `publisher_profiles`

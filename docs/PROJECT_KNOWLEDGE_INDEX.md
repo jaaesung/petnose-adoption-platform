@@ -1,73 +1,126 @@
-# Project Knowledge Index
+# PetNose 프로젝트 지식 인덱스
 
-## Active Canonical Baseline
+## 문서 성격
 
-The active PetNose MVP canonical baseline is simplified DBML v2.
+이 문서는 모든 작업 전 필독해야 하는 always-read router 문서다.
 
-Primary references:
+이 문서는 다음을 빠르게 판단하기 위해 존재한다.
+
+- active canonical 요약
+- 현재 구현 상태 요약
+- task-specific 문서 라우팅
+- removed scope 정리
+- archive/reference 문서를 active 구현 기준으로 오해하지 않기 위한 경계
+
+항상 `docs/README.md`를 먼저 읽고, 이어서 이 문서를 읽는다. 이후 작업 종류에 맞는 canonical/reference 문서를 읽는다.
+
+## Always-Read Policy
+
+모든 작업은 아래 두 문서에서 시작한다.
+
+1. `docs/README.md`
+2. `docs/PROJECT_KNOWLEDGE_INDEX.md`
+
+`docs/archive/**`는 과거 문서 확인용이다. active 구현 기준으로 사용하지 않는다.
+
+## Active Canonical Documents
+
+현재 PetNose MVP 기준 문서는 아래 경로를 유지한다.
 
 - `docs/PETNOSE_MVP_FINAL_PROJECT_SPEC.md`
 - `docs/PETNOSE_MVP_API_CONTRACT.md`
 - `docs/db/petnose_mvp_schema.dbml`
 - `docs/db/V20260508__mvp_canonical_schema.sql`
+- `docs/PROJECT_KNOWLEDGE_INDEX.md`
 
-## Active Domain Tables
+## Task-Specific Routing
 
-The active MVP domain table set is:
+| 작업 종류 | 먼저 읽을 문서 |
+|---|---|
+| API/controller/service/test 작업 | `docs/PETNOSE_MVP_API_CONTRACT.md` |
+| product/domain scope 판단 | `docs/PETNOSE_MVP_FINAL_PROJECT_SPEC.md` |
+| DB/entity/schema 판단 | `docs/db/petnose_mvp_schema.dbml`, `docs/db/V20260508__mvp_canonical_schema.sql` |
+| Flyway/runtime migration 작업 | `docs/reference/DB_MIGRATION_STRATEGY.md` |
+| Qdrant/Python Embed/file storage 경계 판단 | `docs/reference/STORAGE_AND_VECTOR_BOUNDARY.md`, `docs/reference/SPRING_PYTHON_EMBED_CONTRACT.md` |
+| ops/deploy evidence 확인 | `docs/ops-evidence/dev-cd-validation-log.md` |
 
-1. `users`
-2. `dogs`
-3. `dog_images`
-4. `verification_logs`
-5. `adoption_posts`
+추가 운영/온보딩/환경 참고 문서는 `docs/reference/` 아래에 있다. reference 문서와 active canonical 문서가 충돌하면 active canonical 문서가 우선한다.
 
-MySQL is the source of truth. Qdrant is a vector search index only. Dog image binaries are file-system objects; MySQL stores relative paths only.
+## Current Canonical Summary
 
-## Current Registration Policy
+현재 PetNose MVP canonical baseline은 simplified DBML v2다.
 
-The existing real-model `/api/dogs/register` pipeline remains the behavior to preserve:
+- 활성 role은 `USER` / `ADMIN`만 사용한다.
+- `SHELTER` / `ADOPTER`는 active role이 아니다.
+- `publisher_profiles`, `shelter_profiles`, `seller_profiles`, `auth_logs`, `reports`, `refresh_tokens`는 active MVP에 없다.
+- 활성 domain table은 아래 5개다.
+  - `users`
+  - `dogs`
+  - `dog_images`
+  - `verification_logs`
+  - `adoption_posts`
+- `users`가 `display_name`, `contact_phone`, `region`, `is_active`를 직접 가진다.
+- MySQL이 source of truth다.
+- Qdrant는 dog nose vector index일 뿐이다.
+- Firebase는 future optional chat/push 용도이며 MySQL 대체물이 아니다.
+- `dog_images.file_path`는 upload root 기준 상대 경로만 저장한다.
+- API 응답 필드 `qdrant_point_id`, `verification_status`, `embedding_status`는 계산 필드이며 DB column이 아니다.
+- 모든 JSON response field는 `snake_case`를 유지한다.
+- 공통 error response shape는 아래 형태를 유지한다.
 
-- normal registration returns `registration_allowed=true`
-- duplicate suspected registration returns HTTP 200 with `registration_allowed=false`
-- normal registration upserts a Qdrant point with point id equal to `dogs.id`
-- duplicate suspected registration skips Qdrant upsert for the new dog
+```json
+{
+  "error_code": "...",
+  "message": "...",
+  "details": ...
+}
+```
 
-Response fields `qdrant_point_id`, `verification_status`, and `embedding_status` are API-calculated fields. They are not stored as columns on `dogs` in the canonical v2 schema.
+## Current Implemented API Flow
 
-## Current Flutter API Flow
-
-The current Flutter MVP flow is documented in `docs/PETNOSE_MVP_API_CONTRACT.md` and is implemented for:
+현재 `develop` 기준 Flutter MVP/API 흐름은 아래 endpoint를 구현된 기준으로 다룬다.
 
 - `POST /api/dogs/register`
 - `GET /api/users/me`
 - `PATCH /api/users/me/profile`
 - `POST /api/adoption-posts`
-- `GET /api/adoption-posts` public feed, stabilized for `OPEN`, `RESERVED`, and `COMPLETED`
-- `GET /api/adoption-posts/{post_id}` public detail for public statuses
-- `GET /api/adoption-posts/me` owner-only post list
-- `PATCH /api/adoption-posts/{post_id}/status` owner-only status management
-- `POST /api/adoption-posts/{post_id}/handover-verifications` stateless handover-time dog nose verification
+- `GET /api/adoption-posts`
+- `GET /api/adoption-posts/{post_id}`
+- `GET /api/adoption-posts/me`
+- `PATCH /api/adoption-posts/{post_id}/status`
+- `POST /api/adoption-posts/{post_id}/handover-verifications`
 
-Public adoption post list/detail responses must not expose `nose_image_url`. Dog registration is owner-scoped and may return the newly submitted dog's own `nose_image_url`; `top_match` must never include a raw nose image URL.
-
-`POST /api/dogs/register` currently prefers JWT principal ownership at the controller boundary but keeps the temporary local/dev `user_id` fallback. Removing that fallback before production hardening is a follow-up, not part of broad service changes in the Flutter contract branch.
+상세 request/response, error code, visibility rule은 `docs/PETNOSE_MVP_API_CONTRACT.md`가 기준이다.
 
 ## Handover Trust/Safety Flow
 
-Handover-time dog nose verification is included in the MVP trust/safety flow.
+인도 시점 비문 확인(Handover-Time Dog Nose Verification)은 current MVP trust/safety flow에 포함되어 있다.
 
-The endpoint is implemented as a stateless Spring Boot API:
-
-- `POST /api/adoption-posts/{post_id}/handover-verifications`
-- It verifies a freshly captured dog nose image against `adoption_posts.dog_id`.
-- Spring Boot calls Python Embed and Qdrant; Flutter must not call Python Embed, Qdrant, or MySQL directly.
-- It does not add DB tables.
-- It does not save handover images.
-- It does not create `verification_logs` history in the current MVP implementation.
-- It does not mutate adoption post or dog status.
-- It does not expose public nose image URLs.
-- It must not expose another dog's `dog_id`, Qdrant payload details, or `author_user_id`.
+- `POST /api/adoption-posts/{post_id}/handover-verifications`는 stateless API로 구현되어 있다.
+- 새로 촬영한 `nose_image`를 `adoption_posts.dog_id`에 연결된 expected dog와 비교한다.
+- Spring Boot가 Python Embed와 Qdrant 호출을 오케스트레이션한다.
+- Flutter는 Python Embed, Qdrant, MySQL을 직접 호출하지 않는다.
+- 이 흐름은 DB table을 추가하지 않는다.
+- handover image를 저장하지 않는다.
+- 현재 MVP에서는 `verification_logs` history를 만들지 않는다.
+- `adoption_posts.status` 또는 `dogs.status`를 변경하지 않는다.
+- 자동으로 adoption completion을 수행하지 않는다.
+- response에 `nose_image_url`, 다른 강아지의 `dog_id`, Qdrant payload details, `author_user_id`를 노출하지 않는다.
 
 ## Removed Scope
 
-Former profile, auth history, report, token, Firebase chat, push, payment, reservation, contract, admin dashboard, non-canonical roles, and dog image quality/crop extension areas are outside the current canonical MVP v2 table and API set.
+아래 항목은 current MVP active scope가 아니다.
+
+- Firebase chat/push는 구현하지 않았다.
+- reports/admin dashboard는 제외한다.
+- reservation/payment/contract는 제외한다.
+- `SHELTER`, `ADOPTER` 같은 non-canonical role은 제외한다.
+- `publisher_profiles`, `shelter_profiles`, `seller_profiles` 같은 old separate profile table은 제외한다.
+- 별도 `handover_verifications` table은 추가하지 않는다.
+
+## 충돌 판단 규칙
+
+- active canonical 문서가 reference 문서보다 우선한다.
+- active canonical 문서가 archive 문서보다 우선한다.
+- 코드 구현 상태와 문서가 충돌하면 구현을 임의로 바꾸지 말고 먼저 감사/검증 작업으로 확인한다.
+- `docs/archive/**`는 historical context로만 읽고 active implementation criteria로 쓰지 않는다.
