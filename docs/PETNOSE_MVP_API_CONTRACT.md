@@ -31,6 +31,7 @@ This contract records the Flutter MVP flow against the current backend implement
 - Public adoption post list/detail responses must not expose `nose_image_url`.
 - Owner-scoped dog registration responses may return the newly submitted dog's own `nose_image_url`.
 - `top_match` must not expose a raw `nose_image_url`.
+- Handover verification responses must not expose `nose_image_url`, `top_matched_dog_id`, another dog's `dog_id`, Qdrant payload details, or `author_user_id`.
 
 ## Flutter MVP Flow Readiness
 
@@ -46,8 +47,9 @@ This contract records the Flutter MVP flow against the current backend implement
 | 8 | `GET /api/adoption-posts/{post_id}` | Implemented | Renders public post detail without nose image. |
 | 9 | `GET /api/adoption-posts/me` | Implemented | Lists only the current user's posts. |
 | 10 | `PATCH /api/adoption-posts/{post_id}/status` | Implemented | Owner-only post status management. |
+| 11 | `POST /api/adoption-posts/{post_id}/handover-verifications` | Implemented | Included in the MVP trust/safety flow as a stateless handover-time identity check. |
 
-No requested Flutter-flow endpoint is currently marked as unimplemented in latest `develop`. This branch should keep any wider API expansion as a follow-up, not as new scope.
+The handover verification endpoint is part of the MVP trust/safety flow. Wider API expansion beyond this contract remains follow-up scope.
 
 ## Users
 
@@ -491,14 +493,201 @@ Contract notes:
 - Invalid transitions return `INVALID_STATUS_TRANSITION`.
 - Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
 
+### Handover-Time Dog Nose Verification
+
+```http
+POST /api/adoption-posts/{post_id}/handover-verifications
+Authorization: Bearer <JWT>
+Content-Type: multipart/form-data
+```
+
+Form-data:
+
+- `nose_image`: file, required
+
+Purpose:
+
+- Stateless handover-time identity verification.
+- Verifies whether a freshly captured dog nose image matches the dog linked to `adoption_posts.dog_id`.
+- Does not create or update persistent records.
+- Does not save the handover image.
+- Does not create a dog.
+- Does not create a `dog_images` row.
+- Does not create a `verification_logs` row in the current MVP implementation.
+- Does not mutate `adoption_posts.status` or `dogs.status`.
+- Does not complete adoption automatically.
+- Adoption completion remains the existing owner-only status update action.
+
+Authorization:
+
+- Bearer JWT authorization is required.
+- The current user must be active.
+- Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
+- Inactive current user returns `USER_INACTIVE`.
+- Since the current MVP has no reservation/applicant table, this endpoint is not owner-only. It is an authenticated user-facing safety check for handover verification.
+- Do not introduce an `ADOPTER` role or reservation ownership rules.
+
+Post status policy:
+
+- Allowed statuses: `OPEN`, `RESERVED`.
+- Rejected statuses: `DRAFT`, `COMPLETED`, `CLOSED`.
+- Rejected statuses return `POST_NOT_VERIFIABLE` with HTTP `400`.
+
+Expected dog policy:
+
+- `expected_dog_id` is `adoption_posts.dog_id`.
+- The expected dog must exist.
+- The expected dog must be `REGISTERED`.
+- If the expected dog is not eligible, return `DOG_NOT_VERIFIED` or the implementation's existing equivalent.
+
+Normal `200` decision values:
+
+- `MATCHED`
+- `AMBIGUOUS`
+- `NOT_MATCHED`
+- `NO_MATCH_CANDIDATE`
+
+Response `200`, matched:
+
+```json
+{
+  "post_id": 501,
+  "expected_dog_id": "dog-uuid",
+  "matched": true,
+  "decision": "MATCHED",
+  "similarity_score": 0.98231,
+  "threshold": 0.92,
+  "ambiguous_threshold": 0.88,
+  "top_match_is_expected": true,
+  "model": "dog-nose-identification2:s101_224",
+  "dimension": 2048,
+  "message": "분양글에 등록된 강아지와 일치합니다."
+}
+```
+
+Response `200`, ambiguous:
+
+```json
+{
+  "post_id": 501,
+  "expected_dog_id": "dog-uuid",
+  "matched": false,
+  "decision": "AMBIGUOUS",
+  "similarity_score": 0.90112,
+  "threshold": 0.92,
+  "ambiguous_threshold": 0.88,
+  "top_match_is_expected": true,
+  "model": "dog-nose-identification2:s101_224",
+  "dimension": 2048,
+  "message": "유사도가 기준에 근접하지만 확정하기 어렵습니다. 비문 이미지를 다시 촬영해주세요."
+}
+```
+
+Response `200`, not matched:
+
+```json
+{
+  "post_id": 501,
+  "expected_dog_id": "dog-uuid",
+  "matched": false,
+  "decision": "NOT_MATCHED",
+  "similarity_score": 0.42103,
+  "threshold": 0.92,
+  "ambiguous_threshold": 0.88,
+  "top_match_is_expected": false,
+  "model": "dog-nose-identification2:s101_224",
+  "dimension": 2048,
+  "message": "분양글에 등록된 강아지와 일치하지 않습니다. 거래 전 확인이 필요합니다."
+}
+```
+
+Response `200`, no match candidate:
+
+```json
+{
+  "post_id": 501,
+  "expected_dog_id": "dog-uuid",
+  "matched": false,
+  "decision": "NO_MATCH_CANDIDATE",
+  "similarity_score": null,
+  "threshold": 0.92,
+  "ambiguous_threshold": 0.88,
+  "top_match_is_expected": false,
+  "model": "dog-nose-identification2:s101_224",
+  "dimension": 2048,
+  "message": "일치 후보를 찾지 못했습니다. 비문 이미지를 다시 촬영해주세요."
+}
+```
+
+Decision algorithm:
+
+- `expected_dog_id = adoption_posts.dog_id`
+- `top_result = first Qdrant search result`
+
+If there is no Qdrant result:
+
+- `decision = NO_MATCH_CANDIDATE`
+- `matched = false`
+- `similarity_score = null`
+- `top_match_is_expected = false`
+
+If `top_result.dog_id == expected_dog_id` and `score >= match_threshold`:
+
+- `decision = MATCHED`
+- `matched = true`
+- `top_match_is_expected = true`
+
+If `top_result.dog_id == expected_dog_id` and `ambiguous_threshold <= score < match_threshold`:
+
+- `decision = AMBIGUOUS`
+- `matched = false`
+- `top_match_is_expected = true`
+
+Otherwise:
+
+- `decision = NOT_MATCHED`
+- `matched = false`
+- `top_match_is_expected = true` only if `top_result.dog_id == expected_dog_id`
+- `top_match_is_expected = false` if `top_result.dog_id` differs from `expected_dog_id`
+
+Privacy rules:
+
+- Public/user-facing responses must not expose `nose_image_url`.
+- The handover verification response must not expose `top_matched_dog_id`.
+- The handover verification response must not expose another dog's `dog_id`.
+- The handover verification response must not expose Qdrant payload details.
+- The handover verification response must not expose `author_user_id`.
+- `expected_dog_id` may be exposed because the adoption post workflow already references the dog.
+
+Config defaults:
+
+- `match_threshold = 0.92`
+- `ambiguous_threshold = 0.88`
+- `top_k = 5`
+
+Failure behavior:
+
+- Invalid handover image bytes or embed upstream rejection returns the common error response with `INVALID_NOSE_IMAGE`.
+- Unavailable embed service returns the common error response with `EMBED_SERVICE_UNAVAILABLE`.
+- Empty embedding output returns the common error response with `EMPTY_EMBEDDING`.
+- Embedding dimension mismatch returns the common error response with `EMBEDDING_DIMENSION_MISMATCH`.
+- Qdrant search failure returns the common error response with `QDRANT_SEARCH_FAILED`.
+
 ### Adoption Post Error Codes
 
 - `POST_NOT_FOUND`: adoption post does not exist.
 - `POST_NOT_PUBLIC`: adoption post exists but is not publicly visible.
+- `POST_NOT_VERIFIABLE`: adoption post exists but its current status cannot be handover-verified.
 - `POST_OWNER_MISMATCH`: current user does not own the post.
+- `DOG_NOT_VERIFIED`: expected dog is missing required verified/registered eligibility.
 - `INVALID_POST_STATUS`: unsupported or malformed status value.
 - `INVALID_STATUS_TRANSITION`: requested status transition is not allowed.
 - `INVALID_PAGE_REQUEST`: page or size parameter is outside the supported range.
+- `INVALID_NOSE_IMAGE`: handover nose image cannot be processed.
+- `EMBED_SERVICE_UNAVAILABLE`: embedding service cannot be reached or used.
+- `EMPTY_EMBEDDING`: embedding service returned no vector.
+- `EMBEDDING_DIMENSION_MISMATCH`: embedding dimension does not match the configured Qdrant vector dimension.
+- `QDRANT_SEARCH_FAILED`: Qdrant vector search failed.
 - `UNAUTHORIZED`: JWT authorization is missing, malformed, invalid, expired, or resolves to no active user.
 
 ### Local Verification Examples
@@ -522,6 +711,10 @@ curl -X PATCH "http://localhost/api/adoption-posts/<post_id>/status" \
   -H "Authorization: Bearer <JWT>" \
   -H "Content-Type: application/json" \
   -d '{"status":"COMPLETED"}'
+
+curl -X POST "http://localhost/api/adoption-posts/<post_id>/handover-verifications" \
+  -H "Authorization: Bearer <JWT>" \
+  -F "nose_image=@/path/to/current-handover-nose.jpg"
 ```
 
 ## JWT Principal Follow-up
@@ -541,4 +734,4 @@ The old separate publisher/profile variants and report/token extension areas are
 - `auth_logs`
 - `reports`
 - `refresh_tokens`
-- Firebase, chat, or push APIs
+- Firebase, chat, push, reservation, payment, contract, or admin dashboard APIs

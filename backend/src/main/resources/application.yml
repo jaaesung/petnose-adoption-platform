@@ -71,6 +71,12 @@ upload:
 nose:
   duplicate-threshold: ${NOSE_DUPLICATE_THRESHOLD:0.95}
 
+petnose:
+  handover-verification:
+    match-threshold: ${PETNOSE_HANDOVER_VERIFICATION_MATCH_THRESHOLD:0.92}
+    ambiguous-threshold: ${PETNOSE_HANDOVER_VERIFICATION_AMBIGUOUS_THRESHOLD:0.88}
+    top-k: ${PETNOSE_HANDOVER_VERIFICATION_TOP_K:5}
+
 auth:
   jwt:
     secret: ${AUTH_JWT_SECRET:petnose-local-dev-jwt-secret-change-me-32bytes}
