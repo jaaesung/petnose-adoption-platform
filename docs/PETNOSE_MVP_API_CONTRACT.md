@@ -37,23 +37,128 @@ Base URL: `http://<host>/api`
 
 | Step | Endpoint or branch | Current status | Flutter dependency |
 | --- | --- | --- | --- |
-| 1 | `POST /api/dogs/register` | 구현됨 | 아래 registration result field를 반환한다. |
-| 2 | `registration_allowed=false` | 구현됨 | duplicate suspected 화면으로 분기하고 post creation을 막는다. |
-| 3 | `registration_allowed=true` | 구현됨 | post creation에 `dog_id`를 사용한다. |
-| 4 | `GET /api/users/me` | 구현됨 | profile readiness field를 읽는다. |
-| 5 | `PATCH /api/users/me/profile` | 구현됨 | 누락된 `display_name`과 선택적 phone/region을 채운다. |
-| 6 | `POST /api/adoption-posts` | 구현됨 | verified owner dog로 `DRAFT` 또는 `OPEN` post를 만든다. |
-| 7 | `GET /api/adoption-posts` | 구현됨 | nose image 없이 public post list를 렌더링한다. |
-| 8 | `GET /api/adoption-posts/{post_id}` | 구현됨 | nose image 없이 public post detail을 렌더링한다. |
-| 9 | `GET /api/adoption-posts/me` | 구현됨 | current user의 post만 나열한다. |
-| 10 | `PATCH /api/adoption-posts/{post_id}/status` | 구현됨 | owner-only post status management를 수행한다. |
-| 11 | `POST /api/adoption-posts/{post_id}/handover-verifications` | 구현됨 | stateless handover-time identity check로 MVP trust/safety flow에 포함된다. |
+| 1 | `POST /api/auth/register` | 구현됨 | public signup으로 `USER` 계정을 만든다. |
+| 2 | `POST /api/auth/login` | 구현됨 | Bearer access token과 current user payload를 받는다. |
+| 3 | `GET /api/users/me` | 구현됨 | profile readiness field를 읽는다. |
+| 4 | `PATCH /api/users/me/profile` | 구현됨 | 누락된 `display_name`과 선택적 phone/region을 채운다. |
+| 5 | `POST /api/dogs/register` | 구현됨 | 아래 registration result field를 반환한다. |
+| 6 | `registration_allowed=false` | 구현됨 | duplicate suspected 화면으로 분기하고 post creation을 막는다. |
+| 7 | `registration_allowed=true` | 구현됨 | post creation에 `dog_id`를 사용한다. |
+| 8 | `GET /api/dogs/me` | 구현됨 | current user의 dog 목록과 post 생성 가능 여부를 읽는다. |
+| 9 | `GET /api/dogs/{dog_id}` | 구현됨 | owner detail 또는 public dog detail을 렌더링한다. |
+| 10 | `POST /api/adoption-posts` | 구현됨 | verified owner dog로 `DRAFT` 또는 `OPEN` post를 만든다. |
+| 11 | `GET /api/adoption-posts` | 구현됨 | nose image 없이 public post list를 렌더링한다. |
+| 12 | `GET /api/adoption-posts/{post_id}` | 구현됨 | nose image 없이 public post detail을 렌더링한다. |
+| 13 | `GET /api/adoption-posts/me` | 구현됨 | current user의 post만 나열한다. |
+| 14 | `PATCH /api/adoption-posts/{post_id}/status` | 구현됨 | owner-only post status management를 수행한다. |
+| 15 | `POST /api/adoption-posts/{post_id}/handover-verifications` | 구현됨 | stateless handover-time identity check로 MVP trust/safety flow에 포함된다. |
 
 handover verification endpoint는 MVP trust/safety flow의 일부다. 이 contract 밖의 더 넓은 API 확장은 follow-up scope로 남긴다.
 
+## Auth
+
+### 회원가입
+
+```http
+POST /api/auth/register
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123",
+  "display_name": "초코 보호자",
+  "contact_phone": "010-0000-0000",
+  "region": "서울"
+}
+```
+
+Response `201`:
+
+```json
+{
+  "user_id": 101,
+  "email": "user@example.com",
+  "role": "USER",
+  "display_name": "초코 보호자",
+  "contact_phone": "010-0000-0000",
+  "region": "서울",
+  "is_active": true
+}
+```
+
+Contract notes:
+
+- public signup은 항상 `role=USER`를 생성한다.
+- public signup으로 `ADMIN`을 생성하지 않는다. request body에 `role`이 포함되어도 current implementation은 무시하고 `USER`를 저장한다.
+- `password_hash`는 DB에 저장하지만 API response에는 노출하지 않는다.
+- email은 trim 후 lowercase로 normalize한다.
+- password는 trim 후 8자 이상이어야 한다.
+- `display_name`, `contact_phone`, `region`은 signup에서 선택값이다.
+- signup과 dog registration은 `display_name`을 upfront로 요구하지 않는다.
+- optional profile field는 blank string이면 `null`로 저장하고, 값이 있으면 trim 후 저장한다.
+- current JSON serialization은 `UserMeResponse` field set을 사용하므로 nullable profile field key를 response에 유지하고 값은 `null`일 수 있다.
+- adoption post creation은 non-blank `users.display_name`을 요구한다.
+
+Error codes:
+
+- `VALIDATION_FAILED`
+- `EMAIL_ALREADY_EXISTS`
+
+### 로그인
+
+```http
+POST /api/auth/login
+Content-Type: application/json
+```
+
+Request body:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+Response `200`:
+
+```json
+{
+  "access_token": "jwt-access-token",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "user_id": 101,
+    "email": "user@example.com",
+    "role": "USER",
+    "display_name": "초코 보호자",
+    "contact_phone": "010-0000-0000",
+    "region": "서울",
+    "is_active": true
+  }
+}
+```
+
+Contract notes:
+
+- email은 signup과 동일하게 trim 후 lowercase로 normalize한다.
+- `expires_in`은 current default configuration 기준 `3600`초다.
+- response `user`는 `UserMeResponse`와 같은 shape다.
+- inactive user는 token을 발급하지 않고 HTTP `403`과 `USER_INACTIVE`를 반환한다.
+
+Error codes:
+
+- `VALIDATION_FAILED`
+- `INVALID_CREDENTIALS`
+- `USER_INACTIVE`
+
 ## Users
 
-### Current User 조회
+### 내 정보 조회
 
 ```http
 GET /api/users/me
@@ -86,7 +191,20 @@ Flutter-required fields:
 
 `display_name`, `contact_phone`, `region`은 `null`일 수 있지만 field name 자체는 response contract에 포함된다. `created_at`은 current `GET /api/users/me` response에 포함하지 않는다.
 
-### User Profile 수정
+Contract notes:
+
+- Bearer JWT authorization이 필요하다.
+- `password_hash`는 API response에 노출하지 않는다.
+- valid token의 subject가 inactive user로 resolve되면 HTTP `403`과 `USER_INACTIVE`를 반환한다.
+- token subject가 existing user로 resolve되지 않으면 `USER_NOT_FOUND`를 반환한다.
+
+Error codes:
+
+- `UNAUTHORIZED`
+- `USER_NOT_FOUND`
+- `USER_INACTIVE`
+
+### 작성자 표시 정보 수정
 
 ```http
 PATCH /api/users/me/profile
@@ -117,11 +235,23 @@ Response `200`:
 
 Contract notes:
 
+- Bearer JWT authorization이 필요하다.
+- 이 endpoint는 `display_name`, `contact_phone`, `region`만 수정한다.
+- `email`, `role`, `is_active`, `password_hash`는 이 endpoint로 변경하지 않는다.
+- `password_hash`는 API response에 노출하지 않는다.
 - `display_name`, `contact_phone`, `region` 중 하나 이상은 있어야 한다.
 - 생략한 field는 현재 값을 유지한다.
 - 명시적 `null`은 해당 profile field를 비운다.
 - length limit은 canonical `users` column을 따른다: `display_name <= 150`, `contact_phone <= 30`, `region <= 100`.
+- current implementation은 profile update에서 blank string 자체를 별도 거부하지 않는다.
 - adoption post creation에는 non-blank `display_name`이 필요하다.
+
+Error codes:
+
+- `UNAUTHORIZED`
+- `USER_NOT_FOUND`
+- `USER_INACTIVE`
+- `VALIDATION_FAILED`
 
 ## Dog Registration
 
@@ -240,6 +370,154 @@ Errors:
 - `404`: user or dog image metadata not found
 - `422`: image or embedding input rejected
 - `503`: embedding service or Qdrant unavailable
+
+## Dog Query
+
+### 내 강아지 목록
+
+```http
+GET /api/dogs/me?page=0&size=20
+Authorization: Bearer <JWT>
+```
+
+Query parameters:
+
+- `page`: optional, zero-based page number, 기본값은 `0`.
+- `size`: optional page size, 기본값은 `20`, 최대 `100`.
+
+Response `200`:
+
+```json
+{
+  "items": [
+    {
+      "dog_id": "uuid",
+      "name": "초코",
+      "breed": "말티즈",
+      "gender": "MALE",
+      "birth_date": "2023-01-01",
+      "status": "REGISTERED",
+      "verification_status": "VERIFIED",
+      "embedding_status": "COMPLETED",
+      "profile_image_url": "/files/dogs/{dog_id}/profile/profile.jpg",
+      "has_active_post": false,
+      "active_post_id": null,
+      "can_create_post": true,
+      "created_at": "2026-05-13T10:00:00Z"
+    }
+  ],
+  "page": 0,
+  "size": 20,
+  "total_count": 1
+}
+```
+
+Contract notes:
+
+- Bearer JWT authorization이 필요하다.
+- current user가 소유한 dog만 반환한다.
+- `nose_image_url`은 list response에 노출하지 않는다.
+- `verification_status`와 `embedding_status`는 latest `verification_logs.result`에서 계산한다.
+- latest verification result가 없으면 `verification_status=PENDING`, `embedding_status=PENDING`이다.
+- `PASSED`는 `VERIFIED` / `COMPLETED`로 계산한다.
+- `DUPLICATE_SUSPECTED`는 `DUPLICATE_SUSPECTED` / `SKIPPED_DUPLICATE`로 계산한다.
+- `EMBED_FAILED`, `QDRANT_SEARCH_FAILED`, `QDRANT_UPSERT_FAILED`는 failure 상태로 계산한다.
+- `has_active_post`는 `DRAFT`, `OPEN`, `RESERVED` 상태의 active post가 있으면 `true`다.
+- `can_create_post`는 아래 조건을 모두 만족할 때만 `true`다.
+  - `dogs.status == REGISTERED`
+  - latest verification result가 `PASSED`
+  - active post가 없음
+
+Error codes:
+
+- `UNAUTHORIZED`
+- `USER_NOT_FOUND`
+- `USER_INACTIVE`
+- `INVALID_PAGE_REQUEST`
+
+### 강아지 상세
+
+```http
+GET /api/dogs/{dog_id}
+Authorization: Bearer <JWT> optional
+```
+
+Current behavior:
+
+- Authorization header가 없으면 public dog detail flow로 처리한다.
+- Authorization header가 있으면 current `AuthService`로 JWT를 검증한다.
+- invalid Authorization header 또는 invalid/expired token은 `UNAUTHORIZED`를 반환한다.
+- token subject가 existing user로 resolve되지 않으면 `USER_NOT_FOUND`를 반환한다.
+- token subject가 inactive user로 resolve되면 `USER_INACTIVE`를 반환한다.
+- authenticated current user가 dog owner이면 owner detail을 반환한다.
+- owner detail은 해당 owner의 dog `nose_image_url`을 노출할 수 있다.
+- requester가 owner가 아니거나 Authorization header가 없으면 public detail을 반환할 수 있다.
+- public detail은 해당 dog에 `OPEN` 또는 `RESERVED` adoption post가 있을 때만 반환한다.
+- public dog detail은 `nose_image_url`을 노출하지 않는다.
+- current implementation은 `COMPLETED`만 있는 dog를 Dog Query public detail 대상으로 보지 않는다.
+- `GET /api/adoption-posts/{post_id}`는 `OPEN`, `RESERVED`, `COMPLETED` post detail을 public으로 반환할 수 있다. 이것은 Dog Query public detail eligibility와 별도다.
+- public detail이 가능한 `OPEN`/`RESERVED` post가 없고 requester가 owner가 아니면 `DOG_NOT_ACCESSIBLE`을 반환한다.
+- dog가 없으면 `DOG_NOT_FOUND`를 반환한다.
+
+Owner response `200`:
+
+```json
+{
+  "dog_id": "uuid",
+  "name": "초코",
+  "breed": "말티즈",
+  "gender": "MALE",
+  "birth_date": "2023-01-01",
+  "description": "사람을 좋아합니다.",
+  "status": "REGISTERED",
+  "verification_status": "VERIFIED",
+  "embedding_status": "COMPLETED",
+  "nose_image_url": "/files/dogs/{dog_id}/nose/nose.jpg",
+  "profile_image_url": "/files/dogs/{dog_id}/profile/profile.jpg",
+  "has_active_post": false,
+  "active_post_id": null,
+  "can_create_post": true,
+  "created_at": "2026-05-13T10:00:00Z",
+  "updated_at": "2026-05-13T10:00:00Z"
+}
+```
+
+Public response `200`:
+
+```json
+{
+  "dog_id": "uuid",
+  "name": "초코",
+  "breed": "말티즈",
+  "gender": "MALE",
+  "birth_date": "2023-01-01",
+  "description": "사람을 좋아합니다.",
+  "status": "REGISTERED",
+  "verification_status": "VERIFIED",
+  "embedding_status": "COMPLETED",
+  "profile_image_url": "/files/dogs/{dog_id}/profile/profile.jpg",
+  "has_active_post": true,
+  "active_post_id": 501,
+  "can_create_post": false,
+  "created_at": "2026-05-13T10:00:00Z",
+  "updated_at": "2026-05-13T10:00:00Z"
+}
+```
+
+Privacy rules:
+
+- owner detail은 owner 자신의 dog `nose_image_url`을 노출할 수 있다.
+- public detail은 `nose_image_url`을 노출하지 않는다.
+- dog list는 `nose_image_url`을 노출하지 않는다.
+- response field는 `snake_case`를 유지한다.
+
+Error codes:
+
+- `DOG_NOT_FOUND`
+- `DOG_NOT_ACCESSIBLE`
+- `UNAUTHORIZED`
+- `USER_NOT_FOUND`
+- `USER_INACTIVE`
 
 ## Adoption Posts
 
@@ -684,7 +962,11 @@ Failure behavior:
 - `POST_NOT_VERIFIABLE`: adoption post는 존재하지만 current status에서 handover verification을 수행할 수 없다.
 - `POST_OWNER_MISMATCH`: current user가 post owner가 아니다.
 - `DOG_NOT_FOUND`: adoption post가 참조하는 dog가 존재하지 않는다.
+- `DOG_OWNER_MISMATCH`: current user가 dog owner가 아니다.
 - `DOG_NOT_VERIFIED`: expected dog가 required verified/registered eligibility를 만족하지 않는다.
+- `DUPLICATE_DOG_CANNOT_BE_POSTED`: duplicate suspected dog는 adoption post를 만들 수 없다.
+- `ACTIVE_POST_ALREADY_EXISTS`: 같은 dog에 `DRAFT`, `OPEN`, `RESERVED` active post가 이미 존재한다.
+- `USER_PROFILE_REQUIRED`: adoption post 생성 또는 publish 전에 non-blank `users.display_name`이 필요하다.
 - `INVALID_POST_STATUS`: 지원하지 않거나 malformed status value다.
 - `INVALID_STATUS_TRANSITION`: 요청한 status transition이 허용되지 않는다.
 - `INVALID_PAGE_REQUEST`: page 또는 size parameter가 supported range 밖이다.
@@ -700,9 +982,33 @@ Failure behavior:
 
 ### Local Verification Examples
 
-`<JWT>`와 `<post_id>`를 local test value로 바꿔 사용한다.
+`<JWT>`, `<dog_id>`, `<post_id>`를 local test value로 바꿔 사용한다.
 
 ```bash
+curl -X POST "http://localhost/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123","display_name":"초코 보호자"}'
+
+curl -X POST "http://localhost/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
+
+curl -H "Authorization: Bearer <JWT>" \
+  "http://localhost/api/users/me"
+
+curl -X PATCH "http://localhost/api/users/me/profile" \
+  -H "Authorization: Bearer <JWT>" \
+  -H "Content-Type: application/json" \
+  -d '{"display_name":"초코 보호자","contact_phone":"010-0000-0000","region":"서울"}'
+
+curl -H "Authorization: Bearer <JWT>" \
+  "http://localhost/api/dogs/me?page=0&size=20"
+
+curl "http://localhost/api/dogs/<dog_id>"
+
+curl -H "Authorization: Bearer <JWT>" \
+  "http://localhost/api/dogs/<dog_id>"
+
 curl "http://localhost/api/adoption-posts?status=OPEN&page=0&size=20"
 curl "http://localhost/api/adoption-posts?status=RESERVED&page=0&size=20"
 curl "http://localhost/api/adoption-posts?status=COMPLETED&page=0&size=20"

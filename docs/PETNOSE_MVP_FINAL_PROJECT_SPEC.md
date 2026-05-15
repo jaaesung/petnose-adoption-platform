@@ -191,10 +191,13 @@ Normal registration은 Qdrant에 point id `dogs.id`로 vector를 저장한다. D
 
 ## 최종 MVP 사용자 흐름
 
-1. `USER`가 `POST /api/dogs/register`로 nose image와 함께 dog를 등록한다.
-2. `registration_allowed=false`인 duplicate suspicion은 adoption post creation을 막는다.
-3. 검증된 dog는 adoption post 생성에 사용할 수 있다.
-4. public user는 nose image 노출 없이 adoption post를 볼 수 있다.
-5. 인도 시점에는 authenticated user가 새로 촬영한 nose image를 업로드해 post의 expected dog와 stateless verification을 수행할 수 있다.
-6. matched handover verification result는 safety signal일 뿐이다.
-7. completion은 기존 owner-only post status update flow로 처리한다.
+1. `USER`는 `POST /api/auth/register`로 가입하고 `POST /api/auth/login`으로 Bearer access token을 받는다.
+2. Flutter는 `GET /api/users/me`로 profile readiness를 확인하고, 필요하면 `PATCH /api/users/me/profile`로 작성자 표시 정보를 보완한다.
+3. `USER`가 `POST /api/dogs/register`로 nose image와 함께 dog를 등록한다.
+4. `registration_allowed=false`인 duplicate suspicion은 adoption post creation을 막는다.
+5. Flutter는 등록 후 `GET /api/dogs/me`와 `GET /api/dogs/{dog_id}`로 owner dog query와 post 생성 가능 여부를 확인할 수 있다.
+6. 검증된 dog는 adoption post 생성에 사용할 수 있다.
+7. public user는 nose image 노출 없이 adoption post를 볼 수 있다.
+8. 인도 시점에는 authenticated user가 새로 촬영한 nose image를 업로드해 post의 expected dog와 stateless verification을 수행할 수 있다.
+9. matched handover verification result는 safety signal일 뿐이다.
+10. completion은 기존 owner-only post status update flow로 처리한다.

@@ -80,9 +80,13 @@
 
 현재 `develop` 기준 Flutter MVP/API 흐름은 아래 endpoint를 구현된 기준으로 다룬다.
 
-- `POST /api/dogs/register`
+- `POST /api/auth/register`
+- `POST /api/auth/login`
 - `GET /api/users/me`
 - `PATCH /api/users/me/profile`
+- `POST /api/dogs/register`
+- `GET /api/dogs/me`
+- `GET /api/dogs/{dog_id}`
 - `POST /api/adoption-posts`
 - `GET /api/adoption-posts`
 - `GET /api/adoption-posts/{post_id}`
@@ -91,6 +95,14 @@
 - `POST /api/adoption-posts/{post_id}/handover-verifications`
 
 상세 request/response, error code, visibility rule은 `docs/PETNOSE_MVP_API_CONTRACT.md`가 기준이다.
+
+Dog Query API는 current `develop`에 구현되어 있다.
+
+- dog list는 `nose_image_url`을 노출하지 않는다.
+- owner dog detail은 owner 자신의 dog `nose_image_url`을 노출할 수 있다.
+- public dog detail은 `nose_image_url`을 노출하지 않는다.
+- public dog detail은 현재 `OPEN` 또는 `RESERVED` adoption post가 있는 dog로 제한된다.
+- adoption post public detail은 구현상 `OPEN`, `RESERVED`, `COMPLETED` post를 지원할 수 있다. 이것은 Dog Query public detail eligibility와 별도다.
 
 ## Handover Trust/Safety Flow
 
