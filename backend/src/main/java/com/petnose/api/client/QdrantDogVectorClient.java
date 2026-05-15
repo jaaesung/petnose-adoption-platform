@@ -47,6 +47,15 @@ public class QdrantDogVectorClient {
 
     @SuppressWarnings("unchecked")
     public List<QdrantSearchResult> search(List<Double> vector) {
+        return search(vector, searchTopK, searchScoreThreshold);
+    }
+
+    public List<QdrantSearchResult> search(List<Double> vector, int limit) {
+        return search(vector, limit, null);
+    }
+
+    @SuppressWarnings("unchecked")
+    public List<QdrantSearchResult> search(List<Double> vector, int limit, Double scoreThreshold) {
         Map<String, Object> filter = Map.of(
                 "must", List.of(
                         Map.of(
@@ -58,8 +67,10 @@ public class QdrantDogVectorClient {
 
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("vector", vector);
-        request.put("limit", searchTopK);
-        request.put("score_threshold", searchScoreThreshold);
+        request.put("limit", Math.max(1, limit));
+        if (scoreThreshold != null) {
+            request.put("score_threshold", scoreThreshold);
+        }
         request.put("with_payload", true);
         request.put("filter", filter);
 
