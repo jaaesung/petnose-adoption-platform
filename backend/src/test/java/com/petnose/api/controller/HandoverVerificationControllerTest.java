@@ -19,6 +19,10 @@ import com.petnose.api.repository.UserRepository;
 import com.petnose.api.repository.VerificationLogRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,6 +35,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -63,6 +68,10 @@ class HandoverVerificationControllerTest {
 
     private static final String JWT_SECRET = "test-petnose-jwt-secret-change-me-32bytes";
     private static final String MODEL = "dog-nose-identification2:s101_224";
+    private static final double MATCH_THRESHOLD = 0.92;
+    private static final double AMBIGUOUS_THRESHOLD = 0.88;
+    private static final int TOP_K = 5;
+    private static final int VECTOR_DIMENSION = 128;
 
     private static final Set<String> RESPONSE_FIELDS = Set.of(
             "post_id",
@@ -128,6 +137,62 @@ class HandoverVerificationControllerTest {
     }
 
     @Test
+    void handoverVerificationRejectsMalformedAuthorization() throws Exception {
+        handoverRequestWithAuthorization("Token abc", 1L)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationRejectsInvalidToken() throws Exception {
+        handoverRequestWithAuthorization("Bearer invalid-token", 1L)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationRejectsExpiredToken() throws Exception {
+        User user = saveUser(true);
+
+        handoverRequestWithAuthorization("Bearer " + signedToken(user.getId(), Instant.now().minusSeconds(60).getEpochSecond()), 1L)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationReturnsUserNotFoundWhenTokenUserIsMissing() throws Exception {
+        String token = signedToken(Long.MAX_VALUE, Instant.now().plusSeconds(3600).getEpochSecond());
+
+        handoverRequest(token, 1L)
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("USER_NOT_FOUND"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationRejectsInactiveUser() throws Exception {
+        User user = saveUser(false);
+
+        handoverRequest(tokenFor(user), 1L)
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.error_code").value("USER_INACTIVE"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
     void handoverVerificationReturnsPostNotFoundWhenPostIsMissing() throws Exception {
         User user = saveUser(true);
 
@@ -139,11 +204,12 @@ class HandoverVerificationControllerTest {
         verifyNoInteractions(embedClient, qdrantDogVectorClient);
     }
 
-    @Test
-    void handoverVerificationRejectsDraftPost() throws Exception {
+    @ParameterizedTest
+    @EnumSource(value = AdoptionPostStatus.class, names = {"DRAFT", "COMPLETED", "CLOSED"})
+    void handoverVerificationRejectsPostStatusesThatAreNotVerifiable(AdoptionPostStatus status) throws Exception {
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
-        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.DRAFT);
+        AdoptionPost post = savePost(user, dog, status);
 
         handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isBadRequest())
@@ -152,14 +218,202 @@ class HandoverVerificationControllerTest {
         verifyNoInteractions(embedClient, qdrantDogVectorClient);
     }
 
+    @ParameterizedTest
+    @EnumSource(value = AdoptionPostStatus.class, names = {"OPEN", "RESERVED"})
+    void handoverVerificationAcceptsOpenAndReservedPosts(AdoptionPostStatus status) throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, status);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, 0.95)));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("MATCHED"))
+                .andExpect(jsonPath("$.matched").value(true));
+    }
+
+    @Test
+    void handoverVerificationReturnsDogNotFoundWhenExpectedDogIsMissing() throws Exception {
+        User user = saveUser(true);
+        AdoptionPost post = savePost(user, UUID.randomUUID().toString(), AdoptionPostStatus.OPEN);
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error_code").value("DOG_NOT_FOUND"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationAcceptsRegisteredExpectedDog() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, MATCH_THRESHOLD)));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("MATCHED"))
+                .andExpect(jsonPath("$.matched").value(true));
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = DogStatus.class, names = {"PENDING", "DUPLICATE_SUSPECTED", "REJECTED", "ADOPTED", "INACTIVE"})
+    void handoverVerificationRejectsExpectedDogStatusesThatAreNotRegistered(DogStatus dogStatus) throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, dogStatus);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("DOG_NOT_VERIFIED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationReturnsNoseImageRequiredWhenMultipartFileIsMissing() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+
+        handoverRequestWithAuthorization("Bearer " + tokenFor(user), post.getId(), null)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("NOSE_IMAGE_REQUIRED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationReturnsNoseImageRequiredWhenMultipartFileIsEmpty() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+
+        handoverRequestWithFile(tokenFor(user), post.getId(), emptyNoseImage())
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("NOSE_IMAGE_REQUIRED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationMapsUnreadableMultipartBytesToInvalidNoseImage() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+
+        handoverRequestWithFile(tokenFor(user), post.getId(), unreadableNoseImage())
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error_code").value("INVALID_NOSE_IMAGE"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(embedClient, qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationMapsEmbedUpstreamBadRequestToInvalidNoseImage() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenThrow(new EmbedClient.EmbedClientException("invalid image", 400, "invalid", null));
+
+        handoverRequestWithFile(tokenFor(user), post.getId(), textFileNoseImage())
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.error_code").value("INVALID_NOSE_IMAGE"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationMapsEmbedNonBadRequestFailureToServiceUnavailable() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenThrow(new EmbedClient.EmbedClientException("embed down", 503, "down", null));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error_code").value("EMBED_SERVICE_UNAVAILABLE"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(qdrantDogVectorClient);
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"NULL", "EMPTY"})
+    void handoverVerificationMapsNullOrEmptyEmbeddingVectorToEmptyEmbedding(String vectorCase) throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        List<Double> vector = "NULL".equals(vectorCase) ? null : List.of();
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenReturn(new EmbedClient.EmbedResponse(vector, VECTOR_DIMENSION, MODEL));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error_code").value("EMPTY_EMBEDDING"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationMapsEmbeddingDimensionMismatch() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenReturn(new EmbedClient.EmbedResponse(List.of(0.1, 0.2, 0.3), VECTOR_DIMENSION + 1, MODEL));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error_code").value("EMBEDDING_DIMENSION_MISMATCH"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+
+        verifyNoInteractions(qdrantDogVectorClient);
+    }
+
+    @Test
+    void handoverVerificationMapsQdrantSearchFailure() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenThrow(new QdrantDogVectorClient.QdrantClientException(
+                        "qdrant down",
+                        QdrantDogVectorClient.QdrantOperation.SEARCH,
+                        503,
+                        "down",
+                        null
+                ));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.error_code").value("QDRANT_SEARCH_FAILED"))
+                .andExpect(jsonPath("$.details").value(nullValue()));
+    }
+
     @Test
     void handoverVerificationReturnsMatchedWhenExpectedDogIsTopResultAboveThreshold() throws Exception {
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(5)))
-                .thenReturn(List.of(new QdrantSearchResult(dog.getId(), dog.getId(), 0.98231, "Maltese", "secret/nose.jpg")));
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, 0.98231)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
@@ -168,28 +422,73 @@ class HandoverVerificationControllerTest {
                 .andExpect(jsonPath("$.matched").value(true))
                 .andExpect(jsonPath("$.decision").value("MATCHED"))
                 .andExpect(jsonPath("$.similarity_score").value(0.98231))
-                .andExpect(jsonPath("$.threshold").value(0.92))
-                .andExpect(jsonPath("$.ambiguous_threshold").value(0.88))
+                .andExpect(jsonPath("$.threshold").value(MATCH_THRESHOLD))
+                .andExpect(jsonPath("$.ambiguous_threshold").value(AMBIGUOUS_THRESHOLD))
                 .andExpect(jsonPath("$.top_match_is_expected").value(true))
                 .andExpect(jsonPath("$.model").value(MODEL))
-                .andExpect(jsonPath("$.dimension").value(128))
+                .andExpect(jsonPath("$.dimension").value(VECTOR_DIMENSION))
                 .andExpect(jsonPath("$.message").value("분양글에 등록된 강아지와 일치합니다."))
                 .andReturn();
 
         assertResponseIsSafe(result);
-        assertNoPersistenceOrStatusMutation(post, dog);
-        verify(qdrantDogVectorClient).search(anyList(), eq(5));
+        verify(qdrantDogVectorClient).search(anyList(), eq(TOP_K));
     }
 
     @Test
-    void handoverVerificationReturnsNotMatchedWithoutExposingAnotherDogId() throws Exception {
+    void handoverVerificationUsesConfiguredTopKWhenSearchingQdrant() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, 0.95)));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk());
+
+        verify(qdrantDogVectorClient).search(eq(List.of(0.1, 0.2, 0.3)), eq(TOP_K));
+    }
+
+    @ParameterizedTest
+    @CsvSource({
+            "0.93001, MATCHED, true",
+            "0.92, MATCHED, true",
+            "0.90, AMBIGUOUS, false",
+            "0.88, AMBIGUOUS, false",
+            "0.87999, NOT_MATCHED, false"
+    })
+    void handoverVerificationAppliesExpectedDogDecisionBoundaries(
+            double score,
+            String expectedDecision,
+            boolean expectedMatched
+    ) throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, score)));
+
+        MvcResult result = handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value(expectedDecision))
+                .andExpect(jsonPath("$.matched").value(expectedMatched))
+                .andExpect(jsonPath("$.top_match_is_expected").value(true))
+                .andExpect(jsonPath("$.similarity_score").value(score))
+                .andReturn();
+
+        assertResponseIsSafe(result);
+    }
+
+    @Test
+    void handoverVerificationReturnsNotMatchedWhenAnotherDogIsTopResultEvenWithHighScore() throws Exception {
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.RESERVED);
         String otherDogId = UUID.randomUUID().toString();
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(5)))
-                .thenReturn(List.of(new QdrantSearchResult("other-point", otherDogId, 0.42103, "Jindo", "other/nose.jpg")));
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(new QdrantSearchResult("other-point", otherDogId, 0.99123, "Jindo", "other/nose.jpg")));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
@@ -197,36 +496,47 @@ class HandoverVerificationControllerTest {
                 .andExpect(jsonPath("$.expected_dog_id").value(dog.getId()))
                 .andExpect(jsonPath("$.matched").value(false))
                 .andExpect(jsonPath("$.decision").value("NOT_MATCHED"))
-                .andExpect(jsonPath("$.similarity_score").value(0.42103))
+                .andExpect(jsonPath("$.similarity_score").value(0.99123))
                 .andExpect(jsonPath("$.top_match_is_expected").value(false))
                 .andExpect(jsonPath("$.message").value("분양글에 등록된 강아지와 일치하지 않습니다. 거래 전 확인이 필요합니다."))
                 .andReturn();
 
         assertResponseIsSafe(result);
         assertThat(responseBody(result)).doesNotContain(otherDogId, "other-point", "other/nose.jpg");
-        assertNoPersistenceOrStatusMutation(post, dog);
     }
 
     @Test
-    void handoverVerificationReturnsAmbiguousWhenExpectedDogScoreIsBetweenThresholds() throws Exception {
+    void handoverVerificationDoesNotLeakQdrantPayloadOrOtherDogIdentifiers() throws Exception {
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        String otherPointId = "qdrant-private-point-id";
+        String otherDogId = UUID.randomUUID().toString();
+        String privateBreed = "private-payload-breed";
+        String privateNosePath = "dogs/private-dog/nose/private-nose-image.jpg";
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(5)))
-                .thenReturn(List.of(new QdrantSearchResult(dog.getId(), dog.getId(), 0.90112, "Maltese", null)));
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(new QdrantSearchResult(otherPointId, otherDogId, 0.99123, privateBreed, privateNosePath)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.post_id").value(post.getId()))
+                .andExpect(jsonPath("$.expected_dog_id").value(dog.getId()))
                 .andExpect(jsonPath("$.matched").value(false))
-                .andExpect(jsonPath("$.decision").value("AMBIGUOUS"))
-                .andExpect(jsonPath("$.similarity_score").value(0.90112))
-                .andExpect(jsonPath("$.top_match_is_expected").value(true))
-                .andExpect(jsonPath("$.message").value("유사도가 기준에 근접하지만 확정하기 어렵습니다. 비문 이미지를 다시 촬영해주세요."))
+                .andExpect(jsonPath("$.decision").value("NOT_MATCHED"))
+                .andExpect(jsonPath("$.top_match_is_expected").value(false))
                 .andReturn();
 
         assertResponseIsSafe(result);
-        assertNoPersistenceOrStatusMutation(post, dog);
+        assertThat(responseBody(result)).doesNotContain(
+                otherPointId,
+                otherDogId,
+                privateBreed,
+                privateNosePath,
+                "nose_image_path",
+                "profile_image_url",
+                "payload"
+        );
     }
 
     @Test
@@ -235,7 +545,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(5))).thenReturn(List.of());
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K))).thenReturn(List.of());
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
@@ -247,19 +557,57 @@ class HandoverVerificationControllerTest {
                 .andReturn();
 
         assertResponseIsSafe(result);
-        assertNoPersistenceOrStatusMutation(post, dog);
+    }
+
+    @Test
+    void successfulHandoverVerificationDoesNotPersistRecordsOrMutatePostOrDog() throws Exception {
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.RESERVED);
+        PersistenceSnapshot before = snapshot(post, dog);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, 0.95)));
+
+        handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("MATCHED"));
+
+        assertNoPersistenceOrStatusMutation(before, post, dog);
     }
 
     private void mockEmbedding() {
         when(embedClient.embed(any(byte[].class), anyString(), anyString()))
-                .thenReturn(new EmbedClient.EmbedResponse(List.of(0.1, 0.2, 0.3), 128, MODEL));
+                .thenReturn(new EmbedClient.EmbedResponse(List.of(0.1, 0.2, 0.3), VECTOR_DIMENSION, MODEL));
+    }
+
+    private QdrantSearchResult expectedDogResult(Dog dog, double score) {
+        return new QdrantSearchResult(dog.getId(), dog.getId(), score, dog.getBreed(), "secret/nose.jpg");
     }
 
     private ResultActions handoverRequest(String token, Long postId) throws Exception {
-        var request = multipart("/api/adoption-posts/{post_id}/handover-verifications", postId)
-                .file(noseImage());
-        if (token != null) {
-            request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+        return handoverRequestWithAuthorization(token == null ? null : "Bearer " + token, postId, noseImage());
+    }
+
+    private ResultActions handoverRequestWithFile(String token, Long postId, MockMultipartFile file) throws Exception {
+        return handoverRequestWithAuthorization(token == null ? null : "Bearer " + token, postId, file);
+    }
+
+    private ResultActions handoverRequestWithAuthorization(String authorizationHeader, Long postId) throws Exception {
+        return handoverRequestWithAuthorization(authorizationHeader, postId, noseImage());
+    }
+
+    private ResultActions handoverRequestWithAuthorization(
+            String authorizationHeader,
+            Long postId,
+            MockMultipartFile file
+    ) throws Exception {
+        var request = multipart("/api/adoption-posts/{post_id}/handover-verifications", postId);
+        if (file != null) {
+            request.file(file);
+        }
+        if (authorizationHeader != null) {
+            request.header(HttpHeaders.AUTHORIZATION, authorizationHeader);
         }
         return mockMvc.perform(request);
     }
@@ -271,6 +619,38 @@ class HandoverVerificationControllerTest {
                 "image/png",
                 new byte[]{1, 2, 3}
         );
+    }
+
+    private MockMultipartFile emptyNoseImage() {
+        return new MockMultipartFile(
+                "nose_image",
+                "empty.png",
+                "image/png",
+                new byte[0]
+        );
+    }
+
+    private MockMultipartFile textFileNoseImage() {
+        return new MockMultipartFile(
+                "nose_image",
+                "not-a-nose.txt",
+                "text/plain",
+                "not an image".getBytes(StandardCharsets.UTF_8)
+        );
+    }
+
+    private MockMultipartFile unreadableNoseImage() {
+        return new MockMultipartFile(
+                "nose_image",
+                "handover.png",
+                "image/png",
+                new byte[]{1, 2, 3}
+        ) {
+            @Override
+            public byte[] getBytes() throws IOException {
+                throw new IOException("cannot read multipart bytes");
+            }
+        };
     }
 
     private User saveUser(boolean active) {
@@ -299,9 +679,13 @@ class HandoverVerificationControllerTest {
     }
 
     private AdoptionPost savePost(User author, Dog dog, AdoptionPostStatus status) {
+        return savePost(author, dog.getId(), status);
+    }
+
+    private AdoptionPost savePost(User author, String dogId, AdoptionPostStatus status) {
         AdoptionPost post = new AdoptionPost();
         post.setAuthorUserId(author.getId());
-        post.setDogId(dog.getId());
+        post.setDogId(dogId);
         post.setTitle("Handover post");
         post.setContent("Handover verification content.");
         post.setStatus(status);
@@ -317,9 +701,14 @@ class HandoverVerificationControllerTest {
     private void assertResponseIsSafe(MvcResult result) throws Exception {
         JsonNode body = objectMapper.readTree(responseBody(result));
         assertThat(fieldNames(body)).containsExactlyInAnyOrderElementsOf(RESPONSE_FIELDS);
+        assertThat(fieldNames(body)).allMatch(name -> name.matches("[a-z0-9_]+"));
         assertThat(responseBody(result)).doesNotContain(
                 "nose_image_url",
+                "nose_image_path",
                 "top_matched_dog_id",
+                "qdrant_point_id",
+                "point_id",
+                "payload",
                 "author_user_id",
                 "postId",
                 "expectedDogId",
@@ -328,18 +717,44 @@ class HandoverVerificationControllerTest {
         );
     }
 
-    private void assertNoPersistenceOrStatusMutation(AdoptionPost post, Dog dog) {
-        assertThat(dogImageRepository.count()).isZero();
-        assertThat(verificationLogRepository.count()).isZero();
-        assertThat(adoptionPostRepository.findById(post.getId()).orElseThrow().getStatus()).isEqualTo(post.getStatus());
-        assertThat(dogRepository.findById(dog.getId()).orElseThrow().getStatus()).isEqualTo(DogStatus.REGISTERED);
+    private PersistenceSnapshot snapshot(AdoptionPost post, Dog dog) {
+        AdoptionPost persistedPost = adoptionPostRepository.findById(post.getId()).orElseThrow();
+        Dog persistedDog = dogRepository.findById(dog.getId()).orElseThrow();
+        return new PersistenceSnapshot(
+                adoptionPostRepository.count(),
+                dogRepository.count(),
+                dogImageRepository.count(),
+                verificationLogRepository.count(),
+                persistedPost.getStatus(),
+                persistedPost.getDogId(),
+                persistedPost.getAuthorUserId(),
+                persistedDog.getStatus()
+        );
+    }
+
+    private void assertNoPersistenceOrStatusMutation(PersistenceSnapshot before, AdoptionPost post, Dog dog) {
+        assertThat(adoptionPostRepository.count()).isEqualTo(before.postCount());
+        assertThat(dogRepository.count()).isEqualTo(before.dogCount());
+        assertThat(dogImageRepository.count()).isEqualTo(before.dogImageCount());
+        assertThat(verificationLogRepository.count()).isEqualTo(before.verificationLogCount());
+
+        AdoptionPost reloadedPost = adoptionPostRepository.findById(post.getId()).orElseThrow();
+        Dog reloadedDog = dogRepository.findById(dog.getId()).orElseThrow();
+        assertThat(reloadedPost.getStatus()).isEqualTo(before.postStatus());
+        assertThat(reloadedPost.getDogId()).isEqualTo(before.postDogId());
+        assertThat(reloadedPost.getAuthorUserId()).isEqualTo(before.authorUserId());
+        assertThat(reloadedDog.getStatus()).isEqualTo(before.dogStatus());
     }
 
     private String tokenFor(User user) throws Exception {
+        return signedToken(user.getId(), Instant.now().plusSeconds(3600).getEpochSecond());
+    }
+
+    private String signedToken(Long userId, long expiresAt) throws Exception {
         String header = encodeJson(Map.of("alg", "HS256", "typ", "JWT"));
         String payload = encodeJson(Map.of(
-                "sub", user.getId().toString(),
-                "exp", Instant.now().plusSeconds(3600).getEpochSecond()
+                "sub", userId.toString(),
+                "exp", expiresAt
         ));
         String signingInput = header + "." + payload;
         Mac mac = Mac.getInstance("HmacSHA256");
@@ -361,5 +776,17 @@ class HandoverVerificationControllerTest {
         Set<String> names = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(names::add);
         return names;
+    }
+
+    private record PersistenceSnapshot(
+            long postCount,
+            long dogCount,
+            long dogImageCount,
+            long verificationLogCount,
+            AdoptionPostStatus postStatus,
+            String postDogId,
+            Long authorUserId,
+            DogStatus dogStatus
+    ) {
     }
 }

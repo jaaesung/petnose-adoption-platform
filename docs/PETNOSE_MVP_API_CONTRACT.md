@@ -523,7 +523,8 @@ Authorization:
 - Bearer JWT authorization is required.
 - The current user must be active.
 - Missing, malformed, invalid, or expired JWT returns `UNAUTHORIZED`.
-- Inactive current user returns `USER_INACTIVE`.
+- A token that resolves to a deleted or missing user returns `USER_NOT_FOUND`.
+- Inactive current user returns HTTP `403` with `USER_INACTIVE`.
 - Since the current MVP has no reservation/applicant table, this endpoint is not owner-only. It is an authenticated user-facing safety check for handover verification.
 - Do not introduce an `ADOPTER` role or reservation ownership rules.
 
@@ -536,9 +537,9 @@ Post status policy:
 Expected dog policy:
 
 - `expected_dog_id` is `adoption_posts.dog_id`.
-- The expected dog must exist.
+- The expected dog must exist; otherwise return `DOG_NOT_FOUND`.
 - The expected dog must be `REGISTERED`.
-- If the expected dog is not eligible, return `DOG_NOT_VERIFIED` or the implementation's existing equivalent.
+- If the expected dog is not `REGISTERED`, return `DOG_NOT_VERIFIED`.
 
 Normal `200` decision values:
 
@@ -658,15 +659,18 @@ Privacy rules:
 - The handover verification response must not expose Qdrant payload details.
 - The handover verification response must not expose `author_user_id`.
 - `expected_dog_id` may be exposed because the adoption post workflow already references the dog.
+- `similarity_score`, `threshold`, `ambiguous_threshold`, `model`, `dimension`, and `top_match_is_expected` may be exposed.
 
 Config defaults:
 
 - `match_threshold = 0.92`
 - `ambiguous_threshold = 0.88`
 - `top_k = 5`
+- These values are runtime configuration, not DB fields.
 
 Failure behavior:
 
+- Missing or empty `nose_image` returns the common error response with `NOSE_IMAGE_REQUIRED`.
 - Invalid handover image bytes or embed upstream rejection returns the common error response with `INVALID_NOSE_IMAGE`.
 - Unavailable embed service returns the common error response with `EMBED_SERVICE_UNAVAILABLE`.
 - Empty embedding output returns the common error response with `EMPTY_EMBEDDING`.
@@ -679,16 +683,20 @@ Failure behavior:
 - `POST_NOT_PUBLIC`: adoption post exists but is not publicly visible.
 - `POST_NOT_VERIFIABLE`: adoption post exists but its current status cannot be handover-verified.
 - `POST_OWNER_MISMATCH`: current user does not own the post.
+- `DOG_NOT_FOUND`: dog referenced by the adoption post does not exist.
 - `DOG_NOT_VERIFIED`: expected dog is missing required verified/registered eligibility.
 - `INVALID_POST_STATUS`: unsupported or malformed status value.
 - `INVALID_STATUS_TRANSITION`: requested status transition is not allowed.
 - `INVALID_PAGE_REQUEST`: page or size parameter is outside the supported range.
+- `NOSE_IMAGE_REQUIRED`: handover nose image multipart field is missing or empty.
 - `INVALID_NOSE_IMAGE`: handover nose image cannot be processed.
 - `EMBED_SERVICE_UNAVAILABLE`: embedding service cannot be reached or used.
 - `EMPTY_EMBEDDING`: embedding service returned no vector.
 - `EMBEDDING_DIMENSION_MISMATCH`: embedding dimension does not match the configured Qdrant vector dimension.
 - `QDRANT_SEARCH_FAILED`: Qdrant vector search failed.
-- `UNAUTHORIZED`: JWT authorization is missing, malformed, invalid, expired, or resolves to no active user.
+- `UNAUTHORIZED`: JWT authorization is missing, malformed, invalid, or expired.
+- `USER_NOT_FOUND`: JWT subject does not map to an existing user.
+- `USER_INACTIVE`: JWT subject maps to an inactive user.
 
 ### Local Verification Examples
 
