@@ -28,6 +28,8 @@ Base URL: `http://<host>/api`
 - MySQL은 source of truth다. Qdrant는 nose embedding vector index일 뿐이다.
 - `dog_images.file_path`는 upload root 기준 상대 경로를 저장한다.
 - `qdrant_point_id`, `verification_status`, `embedding_status`는 API-calculated field이며 DB column이 아니다.
+- similarity score는 JSON number로 반환된다. DB persistence는 `DECIMAL(6,5)` 기준이지만, API numeric serialization은 trailing zero 표시를 보장하지 않는다.
+- dog/verification/image 계열 resource timestamp는 current implementation에서 Instant-style `Z` timestamp로 노출될 수 있고, adoption post 계열 timestamp는 zone 없는 LocalDateTime-style timestamp로 노출될 수 있다.
 - public adoption post list/detail response는 `nose_image_url`을 노출하지 않는다.
 - owner-scoped dog registration response는 새로 제출한 dog 자신의 `nose_image_url`을 반환할 수 있다.
 - `top_match`는 raw `nose_image_url`을 노출하지 않는다.
@@ -273,9 +275,9 @@ Authentication policy:
 Form fields:
 
 - `user_id`: number, full principal-only registration 전까지 temporary local/dev fallback
-- `name`: string
-- `breed`: string
-- `gender`: `MALE`, `FEMALE`, or `UNKNOWN`
+- `name`: string, required, non-blank
+- `breed`: string, required, non-blank
+- `gender`: required, `MALE`, `FEMALE`, or `UNKNOWN`
 - `birth_date`: `YYYY-MM-DD`, optional
 - `description`: string, optional
 - `nose_image`: file, required
@@ -353,6 +355,8 @@ Duplicate suspected contract:
 - `top_match`는 `nose_image_url`을 포함하지 않는다.
 - top-level `nose_image_url`은 owner-scoped registration response에서 새로 제출한 dog image이며 public exposure가 아니다.
 - `message`는 Flutter duplicate suspected screen copy로 사용할 수 있다.
+- `breed`와 `gender`는 DB-level flexibility와 별개로 dog registration API request에서는 required다.
+- `UNKNOWN`은 client가 명시적으로 제출할 수 있는 gender 값이며 DB default로 자동 적용되는 값이 아니다.
 
 Calculation policy:
 
@@ -559,11 +563,14 @@ Contract notes:
 - JWT principal이 필요하다.
 - dog는 current user 소유여야 한다.
 - post 생성 전 `users.display_name`은 non-blank여야 한다.
+- `title`은 required, non-blank이며 trim 후 최대 200자다.
+- `content`는 required, non-blank이며 trim 후 저장된다.
 - dog는 `REGISTERED`여야 한다.
 - latest verification result는 `PASSED`여야 한다.
 - `DUPLICATE_SUSPECTED`, `REJECTED`, `INACTIVE` 상태의 dog는 대상이 될 수 없다.
 - 같은 dog에 `DRAFT`, `OPEN`, `RESERVED` 상태의 active post가 이미 있으면 안 된다.
 - create는 `DRAFT` 또는 `OPEN`을 받는다. `status`를 생략하면 기본값은 `DRAFT`다.
+- create-time service errors include `USER_PROFILE_REQUIRED`, `DOG_OWNER_MISMATCH`, `DOG_NOT_VERIFIED`, `DUPLICATE_DOG_CANNOT_BE_POSTED`, `ACTIVE_POST_ALREADY_EXISTS`, `INVALID_POST_STATUS`, and `VALIDATION_FAILED`.
 
 ### 공개 분양글 목록(Public Adoption Post List)
 
