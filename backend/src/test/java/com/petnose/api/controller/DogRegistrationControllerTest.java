@@ -2,16 +2,19 @@ package com.petnose.api.controller;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.petnose.api.dto.registration.DogRegisterRequest;
 import com.petnose.api.dto.registration.DogRegisterResponse;
 import com.petnose.api.dto.registration.DuplicateCandidateResponse;
 import com.petnose.api.exception.ApiException;
 import com.petnose.api.service.AuthService;
 import com.petnose.api.service.DogRegistrationService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
@@ -21,6 +24,9 @@ import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.nullValue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -43,6 +49,7 @@ class DogRegistrationControllerTest {
 
     @Test
     void registerDogReturnsCreatedWhenRegistrationAllowed() throws Exception {
+        when(authService.currentActiveUserId("Bearer test-token")).thenReturn(42L);
         when(dogRegistrationService.register(ArgumentMatchers.any()))
                 .thenReturn(new DogRegisterResponse(
                         "dog-1",
@@ -79,6 +86,10 @@ class DogRegistrationControllerTest {
                 .andExpect(jsonPath("$.registrationAllowed").doesNotExist())
                 .andReturn();
 
+        ArgumentCaptor<DogRegisterRequest> requestCaptor = ArgumentCaptor.forClass(DogRegisterRequest.class);
+        verify(dogRegistrationService).register(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().userId()).isEqualTo(42L);
+
         JsonNode body = objectMapper.readTree(responseBody(result));
         assertThat(body.fieldNames())
                 .toIterable()
@@ -101,6 +112,7 @@ class DogRegistrationControllerTest {
 
     @Test
     void registerDogReturnsOkWhenDuplicateSuspected() throws Exception {
+        when(authService.currentActiveUserId("Bearer test-token")).thenReturn(42L);
         when(dogRegistrationService.register(ArgumentMatchers.any()))
                 .thenReturn(new DogRegisterResponse(
                         "dog-2",
@@ -150,6 +162,7 @@ class DogRegistrationControllerTest {
 
     @Test
     void registerDogUsesCanonicalErrorResponse() throws Exception {
+        when(authService.currentActiveUserId("Bearer test-token")).thenReturn(42L);
         when(dogRegistrationService.register(ArgumentMatchers.any()))
                 .thenThrow(new ApiException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "존재하지 않는 user_id 입니다."));
 
@@ -160,7 +173,58 @@ class DogRegistrationControllerTest {
                 .andExpect(jsonPath("$.details").value(nullValue()));
     }
 
+    @Test
+    void registerDogIgnoresMultipartUserIdWhenBearerTokenIsPresent() throws Exception {
+        when(authService.currentActiveUserId("Bearer test-token")).thenReturn(42L);
+        when(dogRegistrationService.register(ArgumentMatchers.any()))
+                .thenReturn(new DogRegisterResponse(
+                        "dog-1",
+                        true,
+                        "REGISTERED",
+                        "VERIFIED",
+                        "COMPLETED",
+                        "dog-1",
+                        "dog-nose-identification2:s101_224",
+                        2048,
+                        0.12345,
+                        "/files/dogs/dog-1/nose/sample.png",
+                        null,
+                        null,
+                        "registered"
+                ));
+
+        mockMvc.perform(validMultipartRequestWithFormUserId())
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.registration_allowed").value(true));
+
+        ArgumentCaptor<DogRegisterRequest> requestCaptor = ArgumentCaptor.forClass(DogRegisterRequest.class);
+        verify(dogRegistrationService).register(requestCaptor.capture());
+        assertThat(requestCaptor.getValue().userId()).isEqualTo(42L);
+    }
+
+    @Test
+    void registerDogRejectsMissingAuthorizationBeforeService() throws Exception {
+        when(authService.currentActiveUserId(null))
+                .thenThrow(new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "Authorization Bearer token이 필요합니다."));
+
+        mockMvc.perform(validMultipartRequestWithoutAuthorization())
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"));
+
+        verify(dogRegistrationService, never()).register(any());
+    }
+
     private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validMultipartRequest() {
+        return validMultipartRequestWithoutAuthorization()
+                .header(HttpHeaders.AUTHORIZATION, "Bearer test-token");
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validMultipartRequestWithFormUserId() {
+        return validMultipartRequest()
+                .param("user_id", "999");
+    }
+
+    private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validMultipartRequestWithoutAuthorization() {
         MockMultipartFile noseImage = new MockMultipartFile(
                 "nose_image",
                 "sample.png",
@@ -170,7 +234,6 @@ class DogRegistrationControllerTest {
 
         return multipart("/api/dogs/register")
                 .file(noseImage)
-                .param("user_id", "1")
                 .param("name", "Bori")
                 .param("breed", "Jindo")
                 .param("gender", "MALE")

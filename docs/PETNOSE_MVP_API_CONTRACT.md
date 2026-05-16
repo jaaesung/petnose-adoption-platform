@@ -268,14 +268,16 @@ Authorization: Bearer <JWT>
 
 Authentication policy:
 
-- JWT principal을 우선한다.
-- `Authorization: Bearer <JWT>` header가 있으면 JWT principal이 제출된 `user_id`보다 우선한다.
-- JWT가 invalid 또는 expired이면 request는 실패하며 `user_id`로 fallback하지 않는다.
-- JWT header가 없을 때만 `user_id`가 temporary local/dev fallback으로 남는다.
+- `Authorization: Bearer <JWT>`가 필요하다.
+- `owner_user_id`는 JWT principal로 resolve된 current active user에서만 결정한다.
+- `user_id`는 active API contract 입력값이 아니다.
+- client가 multipart form-data에 `user_id`를 보내더라도 무시되며 JWT ownership을 override할 수 없다.
+- missing, malformed, invalid, or expired JWT는 `UNAUTHORIZED`를 반환한다.
+- token subject가 existing user로 resolve되지 않으면 current `AuthService` convention에 따라 `USER_NOT_FOUND`를 반환한다.
+- inactive current user는 HTTP `403`과 `USER_INACTIVE`를 반환한다.
 
 Form fields:
 
-- `user_id`: number, full principal-only registration 전까지 temporary local/dev fallback
 - `name`: string, required, non-blank
 - `breed`: string, required, non-blank
 - `gender`: required, `MALE`, `FEMALE`, or `UNKNOWN`
@@ -367,14 +369,22 @@ Calculation policy:
 - similarity, duplicate candidate, model, dimension, failure metadata는 verification history에 저장한다.
 - embedding vector는 Qdrant에만 저장한다.
 
-Errors:
+Error codes:
 
-- `400`: invalid request fields
-- `401`: JWT auth가 필요한 곳에서 missing, malformed, invalid, or expired JWT
-- `403`: inactive user
-- `404`: user or dog image metadata not found
-- `422`: image or embedding input rejected
-- `503`: embedding service or Qdrant unavailable
+- `UNAUTHORIZED`: missing, malformed, invalid, or expired JWT
+- `USER_NOT_FOUND`: JWT subject가 existing user로 resolve되지 않음
+- `USER_INACTIVE`: JWT subject가 inactive user로 resolve됨
+- `NAME_REQUIRED`: `name`이 missing 또는 blank
+- `BREED_REQUIRED`: `breed`가 missing 또는 blank
+- `NOSE_IMAGE_REQUIRED`: `nose_image` field가 없거나 비어 있음
+- `VALIDATION_FAILED`: malformed request field 또는 invalid `gender`
+- `INVALID_BIRTH_DATE`: `birth_date`가 `YYYY-MM-DD` 형식이 아님
+- `INVALID_NOSE_IMAGE`: nose image를 처리할 수 없음
+- `EMBED_SERVICE_UNAVAILABLE`: embedding service에 접근할 수 없거나 사용할 수 없음
+- `EMPTY_EMBEDDING`: embedding service가 vector를 반환하지 않음
+- `EMBEDDING_DIMENSION_MISMATCH`: embedding dimension이 configured Qdrant vector dimension과 맞지 않음
+- `QDRANT_SEARCH_FAILED`: Qdrant vector search 실패
+- `QDRANT_UPSERT_FAILED`: Qdrant vector upsert 실패
 
 ## Dog Query
 
@@ -1009,6 +1019,13 @@ curl -X PATCH "http://localhost/api/users/me/profile" \
   -H "Content-Type: application/json" \
   -d '{"display_name":"초코보호자","contact_phone":"01012345678","region":"대구시 달서구"}'
 
+curl -X POST "http://localhost/api/dogs/register" \
+  -H "Authorization: Bearer <JWT>" \
+  -F "name=초코" \
+  -F "breed=말티즈" \
+  -F "gender=MALE" \
+  -F "nose_image=@/path/to/nose.jpg"
+
 curl -H "Authorization: Bearer <JWT>" \
   "http://localhost/api/dogs/me?page=0&size=20"
 
@@ -1039,11 +1056,11 @@ curl -X POST "http://localhost/api/adoption-posts/<post_id>/handover-verificatio
   -F "nose_image=@/path/to/current-handover-nose.jpg"
 ```
 
-## JWT Principal Follow-up
+## JWT Principal Status
 
-`POST /api/dogs/register`는 controller boundary에서 이미 JWT로 owner를 먼저 resolve하지만, 아직 `user_id` local/dev fallback을 유지하고 owner id를 `DogRegistrationService`에 전달한다. 이 branch는 `DogRegistrationService`를 변경하지 않는다.
+Dog registration ownership은 principal-only다. `POST /api/dogs/register`는 dog `owner_user_id`를 JWT principal에서 resolve하며, 이 정책은 adoption post creation과 같은 JWT principal ownership model에 맞춘다.
 
-MVP/dev usage를 넘어 adoption post creation을 hardening하기 전에는 dog registration에서 `user_id` fallback을 제거하거나 explicit local profile 뒤로 제한한다. 이렇게 해야 dog owner가 `POST /api/adoption-posts`와 같은 JWT principal 기준으로 확립된다.
+이 변경은 dog registration vector, image storage, duplicate detection pipeline behavior를 바꾸지 않는다.
 
 ## Removed APIs and Concepts
 

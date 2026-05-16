@@ -96,6 +96,11 @@
 
 상세 request/response, error code, visibility rule은 `docs/PETNOSE_MVP_API_CONTRACT.md`가 기준이다.
 
+Dog registration ownership은 JWT-principal-only다.
+
+- request `user_id`는 active API contract input이 아니다.
+- dog registration ownership은 adoption post creation ownership과 같은 JWT principal model을 따른다.
+
 Dog Query API는 current `develop`에 구현되어 있다.
 
 - dog list는 `nose_image_url`을 노출하지 않는다.
