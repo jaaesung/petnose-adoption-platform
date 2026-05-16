@@ -194,3 +194,7 @@ Recommendation A를 적용한다.
 대안 task:
 
 - product team이 `0.70` 값 자체의 model 품질 근거를 요구하면 `chore/dog-nose-threshold-calibration`에서 controlled same/different dog pair evaluation을 먼저 수행한다.
+
+## Follow-up threshold branch note
+
+This follow-up threshold branch applies the accepted team policy after the score semantics audit. `QDRANT_SEARCH_SCORE_THRESHOLD` and `NOSE_DUPLICATE_THRESHOLD` were aligned to `0.70`. The interpretation remains Qdrant cosine score `>= 0.70` for duplicate suspected registration. No model architecture change was made.

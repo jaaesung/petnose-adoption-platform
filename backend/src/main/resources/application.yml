@@ -61,7 +61,7 @@ qdrant:
   vector-dimension: ${QDRANT_VECTOR_DIM:128}
   distance: ${QDRANT_DISTANCE:Cosine}
   search-top-k: ${QDRANT_SEARCH_TOP_K:5}
-  search-score-threshold: ${QDRANT_SEARCH_SCORE_THRESHOLD:0.95}
+  search-score-threshold: ${QDRANT_SEARCH_SCORE_THRESHOLD:0.70}
   search-timeout-ms: ${QDRANT_SEARCH_TIMEOUT_MS:3000}
   upsert-timeout-ms: ${QDRANT_UPSERT_TIMEOUT_MS:3000}
 
@@ -69,7 +69,7 @@ upload:
   base-path: ${UPLOAD_BASE_PATH:/var/uploads}
 
 nose:
-  duplicate-threshold: ${NOSE_DUPLICATE_THRESHOLD:0.95}
+  duplicate-threshold: ${NOSE_DUPLICATE_THRESHOLD:0.70}
 
 petnose:
   handover-verification:

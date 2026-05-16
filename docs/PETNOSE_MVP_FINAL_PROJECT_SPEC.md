@@ -191,6 +191,8 @@ MVP handover verification check는 stateless다.
 
 Dog registration ownership은 JWT principal-only다. `dogs.owner_user_id`는 Bearer JWT로 resolve된 current active user에서 결정하며, public API contract는 request `user_id`를 ownership input으로 받지 않는다.
 
+current MVP dog registration duplicate threshold policy는 `0.70`이다. 이 값은 registration duplicate search에서 반환되는 Qdrant cosine score에 적용하며, duplicate 조건은 `score >= 0.70`이다. Qdrant candidate search threshold와 Spring duplicate decision threshold는 같은 score domain에 있으므로 함께 맞춘다. Handover verification은 별도 flow이며 match/ambiguous threshold는 이 branch에서 변경하지 않는다.
+
 계산되는 response field:
 
 - `qdrant_point_id`
