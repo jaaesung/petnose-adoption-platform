@@ -374,7 +374,7 @@ Duplicate threshold policy:
 - duplicate suspected response remains HTTP `200` with `registration_allowed=false`.
 - normal registration response remains HTTP `201` with `registration_allowed=true`.
 - `top_match` privacy is unchanged and does not expose raw `nose_image_url`.
-- handover verification uses a separate threshold policy and is not changed by dog registration duplicate threshold updates.
+- handover verification is a separate stateless flow, but current MVP aligns the same/different threshold to the same Qdrant cosine score `0.70` standard for simplicity.
 
 Calculation policy:
 
@@ -867,9 +867,9 @@ Response `200`, matched:
   "expected_dog_id": "dog-uuid",
   "matched": true,
   "decision": "MATCHED",
-  "similarity_score": 0.98231,
-  "threshold": 0.92,
-  "ambiguous_threshold": 0.88,
+  "similarity_score": 0.80631,
+  "threshold": 0.70,
+  "ambiguous_threshold": 0.70,
   "top_match_is_expected": true,
   "model": "dog-nose-identification2:s101_224",
   "dimension": 2048,
@@ -877,7 +877,7 @@ Response `200`, matched:
 }
 ```
 
-Response `200`, ambiguous:
+Response `200`, ambiguous custom-config only. Default MVP runtime has no ambiguous band because both thresholds are `0.70`; the example below requires custom runtime configuration where `ambiguous_threshold < match_threshold`.
 
 ```json
 {
@@ -885,9 +885,9 @@ Response `200`, ambiguous:
   "expected_dog_id": "dog-uuid",
   "matched": false,
   "decision": "AMBIGUOUS",
-  "similarity_score": 0.90112,
-  "threshold": 0.92,
-  "ambiguous_threshold": 0.88,
+  "similarity_score": 0.75,
+  "threshold": 0.80,
+  "ambiguous_threshold": 0.70,
   "top_match_is_expected": true,
   "model": "dog-nose-identification2:s101_224",
   "dimension": 2048,
@@ -903,9 +903,9 @@ Response `200`, not matched:
   "expected_dog_id": "dog-uuid",
   "matched": false,
   "decision": "NOT_MATCHED",
-  "similarity_score": 0.42103,
-  "threshold": 0.92,
-  "ambiguous_threshold": 0.88,
+  "similarity_score": 0.69999,
+  "threshold": 0.70,
+  "ambiguous_threshold": 0.70,
   "top_match_is_expected": false,
   "model": "dog-nose-identification2:s101_224",
   "dimension": 2048,
@@ -922,8 +922,8 @@ Response `200`, no match candidate:
   "matched": false,
   "decision": "NO_MATCH_CANDIDATE",
   "similarity_score": null,
-  "threshold": 0.92,
-  "ambiguous_threshold": 0.88,
+  "threshold": 0.70,
+  "ambiguous_threshold": 0.70,
   "top_match_is_expected": false,
   "model": "dog-nose-identification2:s101_224",
   "dimension": 2048,
@@ -935,6 +935,8 @@ Decision algorithm:
 
 - `expected_dog_id = adoption_posts.dog_id`
 - `top_result = first Qdrant search result`
+- default MVP handover policy uses simple Qdrant cosine score `0.70` as the same-dog threshold.
+- top match must be the expected dog.
 
 Qdrant result가 없는 경우:
 
@@ -943,24 +945,20 @@ Qdrant result가 없는 경우:
 - `similarity_score = null`
 - `top_match_is_expected = false`
 
-`top_result.dog_id == expected_dog_id`이고 `score >= match_threshold`인 경우:
+Default MVP policy에서 `top_result.dog_id == expected_dog_id`이고 `score >= 0.70`인 경우:
 
 - `decision = MATCHED`
 - `matched = true`
 - `top_match_is_expected = true`
 
-`top_result.dog_id == expected_dog_id`이고 `ambiguous_threshold <= score < match_threshold`인 경우:
-
-- `decision = AMBIGUOUS`
-- `matched = false`
-- `top_match_is_expected = true`
-
-그 외의 경우:
+Default MVP policy에서 그 외의 경우:
 
 - `decision = NOT_MATCHED`
 - `matched = false`
 - `top_match_is_expected = true` only if `top_result.dog_id == expected_dog_id`
 - `top_match_is_expected = false` if `top_result.dog_id` differs from `expected_dog_id`
+
+`AMBIGUOUS` remains a supported enum/custom-config behavior. It can be emitted only if runtime configuration creates an ambiguous band where `ambiguous_threshold < match_threshold`; with default `0.70 / 0.70`, `AMBIGUOUS` is not expected in normal MVP runtime.
 
 Privacy rules:
 
@@ -974,8 +972,8 @@ Privacy rules:
 
 Config defaults:
 
-- `match_threshold = 0.92`
-- `ambiguous_threshold = 0.88`
+- `match_threshold = 0.70`
+- `ambiguous_threshold = 0.70`
 - `top_k = 5`
 - 이 값들은 runtime configuration이며 DB field가 아니다.
 

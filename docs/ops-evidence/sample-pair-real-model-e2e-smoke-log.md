@@ -79,6 +79,99 @@ Source folder는 `C:\Dev\sample`이다. 아래에는 개별 파일 경로를 기
   - 그 결과 milk post handover에서 `<sample:milk2>`의 top match는 expected milk dog가 아니라 앞서 등록된 milk2 dog point가 되었고 `NOT_MATCHED`가 반환되었다.
   - nose3/nose4는 duplicate registration에서는 score `0.80630887 >= 0.70`으로 중복 의심 처리되었지만, handover에서는 score가 handover ambiguous threshold `0.88`보다 낮아 `NOT_MATCHED`가 반환되었다.
 
+## Follow-up implementation after this evidence
+
+- 위 sample-pair smoke는 handover threshold가 `0.92 / 0.88`이던 시점에 실행된 historical runtime evidence다.
+- 이 evidence는 dog registration duplicate threshold `0.70`과 handover threshold `0.88 / 0.92`가 sample-pair flow에서 일관되지 않음을 드러냈다.
+- 같은 branch의 follow-up implementation은 handover default thresholds를 `0.70 / 0.70`으로 맞춘다.
+- 위 milk/nose3 결과는 원본 runtime evidence로 유지한다.
+- post-fix runtime retest를 실제로 수행하면 별도 dated subsection에 명령, collection, thresholds, 결과, privacy 확인을 기록한다.
+- post-fix runtime을 재실행하지 않은 상태에서는 PASS로 주장하지 않는다.
+
+## Post-fix handover retest - 2026-05-16 19:28 +09:00
+
+### Retest environment
+
+- Result: `PARTIAL`
+- Branch: `chore/sample-pair-real-model-e2e-smoke`
+- Qdrant collection: `dog_nose_embeddings_handover_070_retest_20260516192811`
+- Baseline Qdrant `points_count=0`
+- Thresholds:
+  - `QDRANT_SEARCH_SCORE_THRESHOLD=0.70`
+  - `NOSE_DUPLICATE_THRESHOLD=0.70`
+  - `PETNOSE_HANDOVER_VERIFICATION_MATCH_THRESHOLD=0.70`
+  - `PETNOSE_HANDOVER_VERIFICATION_AMBIGUOUS_THRESHOLD=0.70`
+  - `PETNOSE_HANDOVER_VERIFICATION_TOP_K=5`
+- Model/dimension:
+  - `dog-nose-identification2:s101_224`
+  - `2048`
+- Health/config:
+  - Spring direct health HTTP `200`, `UP`
+  - nginx routed health HTTP `200`, `UP`
+  - Python Embed health HTTP `200`
+  - Qdrant collection `2048` / `Cosine`
+  - Spring dev qdrant config reported the retest collection
+
+### Retest commands
+
+```powershell
+# temp env file은 repo 밖에 생성했고 path/content는 redacted
+# base env: infra/docker/.env
+# overrides included real model, isolated collection, duplicate thresholds 0.70, handover thresholds 0.70/0.70
+
+docker compose --env-file <temp-env-redacted> `
+  -f infra\docker\compose.yaml `
+  -f infra\docker\compose.dev.yaml `
+  -f infra\docker\compose.real-model.yaml `
+  up -d --build
+
+docker compose --env-file <temp-env-redacted> `
+  -f infra\docker\compose.yaml `
+  -f infra\docker\compose.dev.yaml `
+  -f infra\docker\compose.real-model.yaml `
+  ps
+
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" http://localhost:8080/actuator/health
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" http://localhost/actuator/health
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" http://localhost:8000/health
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" http://localhost:6333/collections/dog_nose_embeddings_handover_070_retest_20260516192811
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" http://localhost:8080/api/dev/qdrant-config
+docker exec petnose-spring-api-1 printenv PETNOSE_HANDOVER_VERIFICATION_MATCH_THRESHOLD
+docker exec petnose-spring-api-1 printenv PETNOSE_HANDOVER_VERIFICATION_AMBIGUOUS_THRESHOLD
+docker exec petnose-spring-api-1 printenv PETNOSE_HANDOVER_VERIFICATION_TOP_K
+docker exec petnose-spring-api-1 printenv QDRANT_SEARCH_SCORE_THRESHOLD
+docker exec petnose-spring-api-1 printenv NOSE_DUPLICATE_THRESHOLD
+```
+
+Runtime API sequence는 PowerShell variable-based curl harness로 실행했다. JWT와 sample image 개별 경로는 기록하지 않는다.
+
+```powershell
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/auth/register" -H "Content-Type: application/json" -d '{"email":"<test-email>","password":"<redacted-test-password>"}'
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/auth/login" -H "Content-Type: application/json" -d '{"email":"<test-email>","password":"<redacted-test-password>"}'
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X PATCH "http://localhost:8080/api/users/me/profile" -H "Authorization: Bearer <JWT-redacted>" -H "Content-Type: application/json" -d '{"display_name":"SampleUser","contact_phone":"01012345678","region":"대구시 달서구"}'
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/dogs/register" -H "Authorization: Bearer <JWT-redacted>" -F "name=MilkDog070" -F "breed=Mixed" -F "gender=UNKNOWN" -F "nose_image=@<sample:milk1>;type=image/png" -F "profile_image=@<sample:milk_Profile>;type=image/png"
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/adoption-posts" -H "Authorization: Bearer <JWT-redacted>" -H "Content-Type: application/json" -d '{"dog_id":"<milk-dog-id>","title":"Milk handover 070 retest <run-id>","content":"Focused handover 0.70 retest content.","status":"OPEN"}'
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/adoption-posts/<milk-post-id>/handover-verifications" -H "Authorization: Bearer <JWT-redacted>" -F "nose_image=@<sample:milk2>;type=image/png"
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/dogs/register" -H "Authorization: Bearer <JWT-redacted>" -F "name=NoseDog070" -F "breed=Mixed" -F "gender=UNKNOWN" -F "nose_image=@<sample:nose3>;type=image/jpeg" -F "profile_image=@<sample:profile2>;type=image/png"
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/adoption-posts" -H "Authorization: Bearer <JWT-redacted>" -H "Content-Type: application/json" -d '{"dog_id":"<nose3-dog-id>","title":"Nose3 handover 070 retest <run-id>","content":"Focused handover 0.70 retest content.","status":"OPEN"}'
+curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X POST "http://localhost:8080/api/adoption-posts/<nose3-post-id>/handover-verifications" -H "Authorization: Bearer <JWT-redacted>" -F "nose_image=@<sample:nose4>;type=image/jpeg"
+```
+
+### Retest results
+
+| Pair | Operation | Expected under post-fix policy | Observed score | Threshold | Decision | Pass/Fail | Notes |
+|---|---|---|---:|---:|---|---|---|
+| milk post + milk2 | handover before any milk2 registration | `MATCHED` only if top match expected and score >= 0.70 | 0.6536445 | 0.70 / 0.70 | `NOT_MATCHED`, `top_match_is_expected=true` | FAIL | model score is below 0.70, so new policy correctly rejects |
+| nose3 post + nose4 | handover | `MATCHED` if top match expected and score >= 0.70 | 0.80630887 | 0.70 / 0.70 | `MATCHED`, `matched=true`, `top_match_is_expected=true` | PASS | previous 0.88/0.92 mismatch resolved for this pair |
+
+### Retest privacy/no-mutation
+
+- milk handover response exposed no `nose_image_url`, `top_matched_dog_id`, `author_user_id`, or Qdrant payload details.
+- nose3 handover response exposed no `nose_image_url`, `top_matched_dog_id`, `author_user_id`, or Qdrant payload details.
+- milk post remained `OPEN` after handover.
+- nose3 post remained `OPEN` after handover.
+- Qdrant count changed from `0` to `1` after milk1 registration and to `2` after nose3 registration.
+
 ## Commands run
 
 ### Git setup
@@ -266,6 +359,6 @@ curl.exe -sS -w "`nHTTP_STATUS:%{http_code}" -X GET "http://localhost:8080/api/a
 ## Follow-ups
 
 - If the milk pair is expected to be same-dog, inspect model/pair score and sample assumptions because no duplicate candidate was returned at threshold `0.70`.
-- If product wants handover to accept same-dog different-image pairs that score near the registration duplicate threshold, review handover thresholds separately. Do not change them in this branch.
+- Original follow-up at smoke time: if product wants handover to accept same-dog different-image pairs that score near the registration duplicate threshold, review handover thresholds separately. That review decision is now implemented in this branch as default handover thresholds `0.70 / 0.70`; the original runtime results above remain historical evidence.
 - For Flutter screen smoke, ensure UI handles `DUPLICATE_SUSPECTED`, `NOT_MATCHED`, and top-match-not-expected handover outcomes without treating runtime partials as pass.
 - If this isolated collection is reused, clean local/dev MySQL, upload files, and Qdrant collection deliberately before another demo run.

@@ -183,6 +183,13 @@ MVP handover verification check는 stateless다.
 - 자동으로 adoption completion을 수행하지 않는다.
 - adoption completion은 별도의 owner-only status update action으로 남는다.
 
+current MVP handover threshold policy는 dog registration duplicate threshold와 같은 Qdrant cosine score `0.70` 기준을 사용한다.
+
+- Qdrant top match가 expected dog이고 score가 `0.70` 이상이면 같은 dog로 보고 `MATCHED`를 반환한다.
+- Qdrant top match가 expected dog가 아니거나 score가 `0.70` 미만이면 `NOT_MATCHED`를 반환한다.
+- Qdrant result가 없으면 `NO_MATCH_CANDIDATE`를 반환한다.
+- handover `MATCHED`는 safety signal이며 adoption post를 자동 완료하지 않는다.
+
 이 기능은 reservation, payment, contract, Firebase, chat, push, report/admin, `SHELTER`, `ADOPTER` concept을 추가하지 않는다.
 
 ## Dog Registration Pipeline Policy
@@ -191,7 +198,7 @@ MVP handover verification check는 stateless다.
 
 Dog registration ownership은 JWT principal-only다. `dogs.owner_user_id`는 Bearer JWT로 resolve된 current active user에서 결정하며, public API contract는 request `user_id`를 ownership input으로 받지 않는다.
 
-current MVP dog registration duplicate threshold policy는 `0.70`이다. 이 값은 registration duplicate search에서 반환되는 Qdrant cosine score에 적용하며, duplicate 조건은 `score >= 0.70`이다. Qdrant candidate search threshold와 Spring duplicate decision threshold는 같은 score domain에 있으므로 함께 맞춘다. Handover verification은 별도 flow이며 match/ambiguous threshold는 이 branch에서 변경하지 않는다.
+current MVP dog registration duplicate threshold policy는 `0.70`이다. 이 값은 registration duplicate search에서 반환되는 Qdrant cosine score에 적용하며, duplicate 조건은 `score >= 0.70`이다. Qdrant candidate search threshold와 Spring duplicate decision threshold는 같은 score domain에 있으므로 함께 맞춘다. Handover verification은 별도 stateless flow이지만 MVP simplicity를 위해 same-dog threshold를 같은 Qdrant cosine score `0.70` 기준으로 맞춘다.
 
 계산되는 response field:
 

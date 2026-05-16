@@ -9,8 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "petnose.handover-verification")
 public class HandoverVerificationProperties {
 
-    private double matchThreshold = 0.92;
-    private double ambiguousThreshold = 0.88;
+    private double matchThreshold = 0.70;
+    private double ambiguousThreshold = 0.70;
     private int topK = 5;
 
     public int effectiveTopK() {
