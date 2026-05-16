@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -30,9 +31,9 @@ public class AuthService {
     private static final int MAX_DISPLAY_NAME_LENGTH = 150;
     private static final int MAX_CONTACT_PHONE_LENGTH = 30;
     private static final int MAX_REGION_LENGTH = 100;
-    private static final int MAX_PROFILE_DISPLAY_NAME_LENGTH = 150;
-    private static final int MAX_PROFILE_CONTACT_PHONE_LENGTH = 30;
     private static final int MAX_PROFILE_REGION_LENGTH = 100;
+    private static final Pattern PROFILE_DISPLAY_NAME_PATTERN = Pattern.compile("^[가-힣A-Za-z0-9]{2,10}$");
+    private static final Pattern PROFILE_CONTACT_PHONE_PATTERN = Pattern.compile("^[0-9]{11}$");
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -95,16 +96,16 @@ public class AuthService {
     @Transactional
     public UserProfileResponse updateProfile(String authorizationHeader, UserProfileUpdateRequest request) {
         User user = currentActiveUser(authorizationHeader);
-        validateProfileUpdate(request);
+        NormalizedProfileUpdate normalized = validateAndNormalizeProfileUpdate(request);
 
         if (request.hasDisplayName()) {
-            user.setDisplayName(request.displayName());
+            user.setDisplayName(normalized.displayName());
         }
         if (request.hasContactPhone()) {
-            user.setContactPhone(request.contactPhone());
+            user.setContactPhone(normalized.contactPhone());
         }
         if (request.hasRegion()) {
-            user.setRegion(request.region());
+            user.setRegion(normalized.region());
         }
 
         return UserProfileResponse.from(user);
@@ -126,7 +127,7 @@ public class AuthService {
         return user;
     }
 
-    private void validateProfileUpdate(UserProfileUpdateRequest request) {
+    private NormalizedProfileUpdate validateAndNormalizeProfileUpdate(UserProfileUpdateRequest request) {
         if (request == null || !request.hasAnyProfileField()) {
             throw validationFailed(
                     "display_name, contact_phone, region 중 최소 1개는 포함되어야 합니다.",
@@ -135,29 +136,64 @@ public class AuthService {
         }
 
         List<String> fields = new ArrayList<>();
-        if (request.hasDisplayName() && exceeds(request.displayName(), MAX_PROFILE_DISPLAY_NAME_LENGTH)) {
-            fields.add("display_name");
+        String displayName = null;
+        String contactPhone = null;
+        String region = null;
+
+        if (request.hasDisplayName()) {
+            displayName = normalizeDisplayNameForProfileUpdate(request.displayName(), fields);
         }
-        if (request.hasContactPhone() && exceeds(request.contactPhone(), MAX_PROFILE_CONTACT_PHONE_LENGTH)) {
-            fields.add("contact_phone");
+        if (request.hasContactPhone()) {
+            contactPhone = normalizeContactPhoneForProfileUpdate(request.contactPhone(), fields);
         }
-        if (request.hasRegion() && exceeds(request.region(), MAX_PROFILE_REGION_LENGTH)) {
-            fields.add("region");
+        if (request.hasRegion()) {
+            region = normalizeRegionForProfileUpdate(request.region(), fields);
         }
         if (!fields.isEmpty()) {
             throw validationFailed(validationMessage(fields.get(0)), fields);
         }
+
+        return new NormalizedProfileUpdate(displayName, contactPhone, region);
     }
 
-    private boolean exceeds(String value, int maxLength) {
-        return value != null && value.length() > maxLength;
+    private String normalizeDisplayNameForProfileUpdate(String value, List<String> fields) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (!PROFILE_DISPLAY_NAME_PATTERN.matcher(trimmed).matches()) {
+            fields.add("display_name");
+        }
+        return trimmed;
+    }
+
+    private String normalizeContactPhoneForProfileUpdate(String value, List<String> fields) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (!PROFILE_CONTACT_PHONE_PATTERN.matcher(trimmed).matches()) {
+            fields.add("contact_phone");
+        }
+        return trimmed;
+    }
+
+    private String normalizeRegionForProfileUpdate(String value, List<String> fields) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isBlank() || trimmed.length() > MAX_PROFILE_REGION_LENGTH) {
+            fields.add("region");
+        }
+        return trimmed;
     }
 
     private String validationMessage(String field) {
         return switch (field) {
-            case "display_name" -> "display_name은 150자 이하여야 합니다.";
-            case "contact_phone" -> "contact_phone은 30자 이하여야 합니다.";
-            case "region" -> "region은 100자 이하여야 합니다.";
+            case "display_name" -> "display_name은 공백 없이 한글, 영문, 숫자만 사용해 2자 이상 10자 이하여야 합니다.";
+            case "contact_phone" -> "contact_phone은 하이픈 없이 숫자 11자리여야 합니다.";
+            case "region" -> "region은 공백만 사용할 수 없고 100자 이하여야 합니다.";
             default -> "입력값 검증에 실패했습니다.";
         };
     }
@@ -212,5 +248,8 @@ public class AuthService {
 
     private ApiException badRequest(String message) {
         return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message);
+    }
+
+    private record NormalizedProfileUpdate(String displayName, String contactPhone, String region) {
     }
 }

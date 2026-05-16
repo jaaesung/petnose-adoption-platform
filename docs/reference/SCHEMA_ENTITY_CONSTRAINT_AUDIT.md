@@ -243,6 +243,13 @@ DTO / 요청 모델:
 - recommended fix options: profile update에서도 blank to null 또는 blank reject 중 하나를 선택하고 Auth/User API tests를 보강한다.
 - safest next branch type: code/test.
 
+Follow-up note for this profile validation hardening branch:
+
+- 이 branch는 profile update blank string 저장 이슈를 해결한다.
+- profile update에 더 엄격한 `display_name` / `contact_phone` API-level validation을 추가한다.
+- DB column length와 nullable schema는 변경하지 않는다.
+- 명시적 `null` clearing과 omitted-field preservation 동작은 유지한다.
+
 ### P2. active adoption post uniqueness는 service-level만 존재
 
 - evidence: canonical DB에는 dog별 active post uniqueness constraint가 없다. `AdoptionPostService`와 repository query가 `DRAFT/OPEN/RESERVED` active post 존재 여부를 검사하고 tests가 해당 정책을 확인한다.
