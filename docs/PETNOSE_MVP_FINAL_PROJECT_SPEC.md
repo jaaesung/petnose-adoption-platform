@@ -38,6 +38,8 @@ Columns:
 
 `display_name`은 nullable이다. 분양글 작성 전에 비문 등록과 검증이 먼저 일어나므로 signup과 dog verification 단계에서 author display name을 요구하지 않는다. 다만 adoption post를 생성하기 전에는 service가 `users.display_name` 존재 여부를 검증해야 한다.
 
+`PATCH /api/users/me/profile`로 `display_name`을 설정할 때는 더 엄격한 작성자 표시명 정책을 적용한다. 값은 trim 후 저장하며 2자 이상 10자 이하, 한글 완성형 음절/English letters/digits만 허용하고 whitespace, special character, emoji는 허용하지 않는다. `contact_phone`은 optional이지만 profile update로 설정하는 경우 hyphen 없는 11자리 mobile phone number여야 한다. `region`은 optional이고 Flutter UI 선택값을 저장하는 필드다. backend는 profile update에서 trim, blank rejection, max-length validation을 적용하되 district enum/list를 강제하지 않는다.
+
 ## Dogs
 
 `dogs`는 기본 강아지 정보와 lifecycle/service status를 저장한다.

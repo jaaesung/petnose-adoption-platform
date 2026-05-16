@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -273,6 +274,25 @@ class AuthUserApiIntegrationTest {
     }
 
     @Test
+    void registerBlankOptionalProfileFieldsStillStoreNull() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "blank-profile-signup@example.com",
+                                "password", "password123",
+                                "display_name", "   ",
+                                "contact_phone", "   ",
+                                "region", "   "
+                        ))))
+                .andExpect(status().isCreated());
+
+        User saved = userRepository.findByEmail("blank-profile-signup@example.com").orElseThrow();
+        assertThat(saved.getDisplayName()).isNull();
+        assertThat(saved.getContactPhone()).isNull();
+        assertThat(saved.getRegion()).isNull();
+    }
+
+    @Test
     void meRequiresBearerToken() throws Exception {
         mockMvc.perform(get("/api/users/me"))
                 .andExpect(status().isUnauthorized())
@@ -339,7 +359,7 @@ class AuthUserApiIntegrationTest {
     }
 
     @Test
-    void profilePatchUpdatesCurrentUserAndMeReflectsUpdatedProfile() throws Exception {
+    void profilePatchTrimsPersistsAndMeReflectsUpdatedProfile() throws Exception {
         register("profile@example.com", "password123", "Old Name", "010-0000-0000", "Old Region");
         String accessToken = loginAccessToken("profile@example.com", "password123");
 
@@ -347,15 +367,15 @@ class AuthUserApiIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
-                                "display_name", "행복임보자",
-                                "contact_phone", "010-1234-5678",
-                                "region", "서울"
+                                "display_name", "  행복임보자  ",
+                                "contact_phone", "  01012345678  ",
+                                "region", "  대구시 달서구  "
                         ))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user_id").exists())
                 .andExpect(jsonPath("$.display_name").value("행복임보자"))
-                .andExpect(jsonPath("$.contact_phone").value("010-1234-5678"))
-                .andExpect(jsonPath("$.region").value("서울"))
+                .andExpect(jsonPath("$.contact_phone").value("01012345678"))
+                .andExpect(jsonPath("$.region").value("대구시 달서구"))
                 .andExpect(jsonPath("$.email").doesNotExist())
                 .andExpect(jsonPath("$.role").doesNotExist())
                 .andExpect(jsonPath("$.is_active").doesNotExist())
@@ -366,91 +386,126 @@ class AuthUserApiIntegrationTest {
                 .toIterable()
                 .containsExactly("user_id", "display_name", "contact_phone", "region");
 
+        User saved = userRepository.findByEmail("profile@example.com").orElseThrow();
+        assertThat(saved.getDisplayName()).isEqualTo("행복임보자");
+        assertThat(saved.getContactPhone()).isEqualTo("01012345678");
+        assertThat(saved.getRegion()).isEqualTo("대구시 달서구");
+
         mockMvc.perform(get("/api/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.display_name").value("행복임보자"))
-                .andExpect(jsonPath("$.contact_phone").value("010-1234-5678"))
-                .andExpect(jsonPath("$.region").value("서울"));
+                .andExpect(jsonPath("$.contact_phone").value("01012345678"))
+                .andExpect(jsonPath("$.region").value("대구시 달서구"));
     }
 
     @Test
-    void profilePatchAcceptsActiveCanonicalMaxLengths() throws Exception {
-        register("profile-max@example.com", "password123", "Name", "010-0000-0000", "Region");
-        String accessToken = loginAccessToken("profile-max@example.com", "password123");
-        String displayName = "d".repeat(150);
-        String contactPhone = "1".repeat(30);
-        String region = "r".repeat(100);
+    void profilePatchAcceptsDisplayNameBoundariesAndAllowedCharacters() throws Exception {
+        register("profile-display-valid@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("profile-display-valid@example.com", "password123");
+        List<String> validDisplayNames = List.of("초코", "User123", "가나다라마바사아자차");
+
+        for (String displayName : validDisplayNames) {
+            mockMvc.perform(patch("/api/users/me/profile")
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of("display_name", displayName))))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.display_name").value(displayName));
+        }
+
+        User saved = userRepository.findByEmail("profile-display-valid@example.com").orElseThrow();
+        assertThat(saved.getDisplayName()).isEqualTo("가나다라마바사아자차");
+    }
+
+    @Test
+    void profilePatchRejectsInvalidDisplayNames() throws Exception {
+        register("profile-display-invalid@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("profile-display-invalid@example.com", "password123");
+        List<String> invalidDisplayNames = List.of(
+                "A",
+                "a".repeat(11),
+                "초코 보호자",
+                "   ",
+                "초코!",
+                "user_1",
+                "초코🐶",
+                "초코\n보호",
+                "초코\t보호"
+        );
+
+        for (String displayName : invalidDisplayNames) {
+            assertProfilePatchValidationFailed(accessToken, "display_name", displayName);
+        }
+    }
+
+    @Test
+    void profilePatchAcceptsContactPhoneDigitsAndTrims() throws Exception {
+        register("profile-phone-valid@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("profile-phone-valid@example.com", "password123");
 
         mockMvc.perform(patch("/api/users/me/profile")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of(
-                                "display_name", displayName,
-                                "contact_phone", contactPhone,
-                                "region", region
-                        ))))
+                        .content(json(Map.of("contact_phone", "01012345678"))))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.display_name").value(displayName))
-                .andExpect(jsonPath("$.contact_phone").value(contactPhone))
-                .andExpect(jsonPath("$.region").value(region));
-
-        User saved = userRepository.findByEmail("profile-max@example.com").orElseThrow();
-        assertThat(saved.getDisplayName()).hasSize(150);
-        assertThat(saved.getContactPhone()).hasSize(30);
-        assertThat(saved.getRegion()).hasSize(100);
-    }
-
-    @Test
-    void profilePatchRejectsDisplayNameLongerThan150() throws Exception {
-        register("long-display@example.com", "password123", "Name", null, null);
-        String accessToken = loginAccessToken("long-display@example.com", "password123");
+                .andExpect(jsonPath("$.contact_phone").value("01012345678"));
 
         mockMvc.perform(patch("/api/users/me/profile")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("display_name", "a".repeat(151)))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.details.fields[0]").value("display_name"))
-                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
+                        .content(json(Map.of("contact_phone", "  01012345678  "))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contact_phone").value("01012345678"));
+
+        User saved = userRepository.findByEmail("profile-phone-valid@example.com").orElseThrow();
+        assertThat(saved.getContactPhone()).isEqualTo("01012345678");
     }
 
     @Test
-    void profilePatchRejectsContactPhoneLongerThan30() throws Exception {
-        register("long-phone@example.com", "password123", "Name", null, null);
-        String accessToken = loginAccessToken("long-phone@example.com", "password123");
+    void profilePatchRejectsInvalidContactPhones() throws Exception {
+        register("profile-phone-invalid@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("profile-phone-invalid@example.com", "password123");
+        List<String> invalidContactPhones = List.of(
+                "0101234567",
+                "010123456789",
+                "010-1234-5678",
+                "010 1234 5678",
+                "+821012345678",
+                "(010)12345678",
+                "010abcd5678",
+                "   "
+        );
+
+        for (String contactPhone : invalidContactPhones) {
+            assertProfilePatchValidationFailed(accessToken, "contact_phone", contactPhone);
+        }
+    }
+
+    @Test
+    void profilePatchAcceptsRegionTrimAndRejectsBlankOrTooLong() throws Exception {
+        register("profile-region@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("profile-region@example.com", "password123");
 
         mockMvc.perform(patch("/api/users/me/profile")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("contact_phone", "1".repeat(31)))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.details.fields[0]").value("contact_phone"))
-                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
-    }
+                        .content(json(Map.of("region", "  대구시 달서구  "))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.region").value("대구시 달서구"));
 
-    @Test
-    void profilePatchRejectsRegionLongerThan100() throws Exception {
-        register("long-region@example.com", "password123", "Name", null, null);
-        String accessToken = loginAccessToken("long-region@example.com", "password123");
+        User saved = userRepository.findByEmail("profile-region@example.com").orElseThrow();
+        assertThat(saved.getRegion()).isEqualTo("대구시 달서구");
 
-        mockMvc.perform(patch("/api/users/me/profile")
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("region", "a".repeat(101)))))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.details.fields[0]").value("region"))
-                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
+        assertProfilePatchValidationFailed(accessToken, "region", "   ");
+        assertProfilePatchValidationFailed(accessToken, "region", "r".repeat(101));
     }
 
     @Test
     void profilePatchRequiresAuthentication() throws Exception {
         mockMvc.perform(patch("/api/users/me/profile")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("display_name", "No Token"))))
+                        .content(json(Map.of("display_name", "NoToken"))))
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.error_code").value("UNAUTHORIZED"))
                 .andExpect(jsonPath("$.details").value(nullValue()));
@@ -468,7 +523,7 @@ class AuthUserApiIntegrationTest {
         mockMvc.perform(patch("/api/users/me/profile")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("display_name", "Should Not Update"))))
+                        .content(json(Map.of("display_name", "ShouldNot"))))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.error_code").value("USER_INACTIVE"))
                 .andExpect(jsonPath("$.details").value(nullValue()));
@@ -487,6 +542,29 @@ class AuthUserApiIntegrationTest {
                 .andExpect(jsonPath("$.display_name").value("Partial Name"))
                 .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
                 .andExpect(jsonPath("$.region").value("Jeju"));
+
+        mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("display_name", "SafeName"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.display_name").value("SafeName"))
+                .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.region").value("Jeju"));
+
+        mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("contact_phone", "01012345678"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.display_name").value("SafeName"))
+                .andExpect(jsonPath("$.contact_phone").value("01012345678"))
+                .andExpect(jsonPath("$.region").value("Jeju"));
+
+        User saved = userRepository.findByEmail("partial-profile@example.com").orElseThrow();
+        assertThat(saved.getDisplayName()).isEqualTo("SafeName");
+        assertThat(saved.getContactPhone()).isEqualTo("01012345678");
+        assertThat(saved.getRegion()).isEqualTo("Jeju");
     }
 
     @Test
@@ -511,6 +589,27 @@ class AuthUserApiIntegrationTest {
 
         User saved = userRepository.findByEmail("null-profile@example.com").orElseThrow();
         assertThat(saved.getDisplayName()).isNull();
+
+        Map<String, Object> contactAndRegionBody = new LinkedHashMap<>();
+        contactAndRegionBody.put("contact_phone", null);
+        contactAndRegionBody.put("region", null);
+
+        MvcResult secondPatchResult = mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(contactAndRegionBody)))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode secondPatchBody = objectMapper.readTree(responseBody(secondPatchResult));
+        assertThat(secondPatchBody.get("display_name").isNull()).isTrue();
+        assertThat(secondPatchBody.get("contact_phone").isNull()).isTrue();
+        assertThat(secondPatchBody.get("region").isNull()).isTrue();
+
+        User nullCleared = userRepository.findByEmail("null-profile@example.com").orElseThrow();
+        assertThat(nullCleared.getDisplayName()).isNull();
+        assertThat(nullCleared.getContactPhone()).isNull();
+        assertThat(nullCleared.getRegion()).isNull();
     }
 
     @Test
@@ -525,7 +624,59 @@ class AuthUserApiIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.details.fields[0]").value("display_name"))
+                .andExpect(jsonPath("$.details.fields[1]").value("contact_phone"))
+                .andExpect(jsonPath("$.details.fields[2]").value("region"))
                 .andExpect(jsonPath("$.details.timestamp").doesNotExist());
+    }
+
+    @Test
+    void profilePatchRejectsUnknownFieldsOnly() throws Exception {
+        register("unknown-profile@example.com", "password123", "Name", null, null);
+        String accessToken = loginAccessToken("unknown-profile@example.com", "password123");
+
+        mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of("role", "ADMIN"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.details.fields[0]").value("display_name"))
+                .andExpect(jsonPath("$.details.fields[1]").value("contact_phone"))
+                .andExpect(jsonPath("$.details.fields[2]").value("region"));
+    }
+
+    @Test
+    void profilePatchIgnoresMassAssignmentFields() throws Exception {
+        register("mass-assignment@example.com", "password123", "OldName", "010-1111-2222", "Daegu");
+        String accessToken = loginAccessToken("mass-assignment@example.com", "password123");
+        User before = userRepository.findByEmail("mass-assignment@example.com").orElseThrow();
+        String originalPasswordHash = before.getPasswordHash();
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("display_name", "SafeName");
+        body.put("role", "ADMIN");
+        body.put("email", "attacker@example.com");
+        body.put("is_active", false);
+        body.put("password_hash", "hack");
+
+        mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(body)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.display_name").value("SafeName"))
+                .andExpect(jsonPath("$.email").doesNotExist())
+                .andExpect(jsonPath("$.role").doesNotExist())
+                .andExpect(jsonPath("$.is_active").doesNotExist())
+                .andExpect(jsonPath("$.password_hash").doesNotExist());
+
+        User after = userRepository.findByEmail("mass-assignment@example.com").orElseThrow();
+        assertThat(after.getRole()).isEqualTo(UserRole.USER);
+        assertThat(after.getEmail()).isEqualTo("mass-assignment@example.com");
+        assertThat(after.isActive()).isTrue();
+        assertThat(after.getPasswordHash()).isEqualTo(originalPasswordHash);
+        assertThat(after.getDisplayName()).isEqualTo("SafeName");
+        assertThat(userRepository.findByEmail("attacker@example.com")).isEmpty();
     }
 
     private void register(String email, String password, String displayName, String contactPhone, String region) throws Exception {
@@ -570,6 +721,20 @@ class AuthUserApiIntegrationTest {
         user.setRole(UserRole.USER);
         user.setActive(active);
         return userRepository.saveAndFlush(user);
+    }
+
+    private void assertProfilePatchValidationFailed(String accessToken, String field, String value) throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(field, value);
+
+        mockMvc.perform(patch("/api/users/me/profile")
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(body)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"))
+                .andExpect(jsonPath("$.details.fields[0]").value(field))
+                .andExpect(jsonPath("$.details.timestamp").doesNotExist());
     }
 
     private String signedToken(Long userId, long expiresAt) throws Exception {

@@ -218,9 +218,9 @@ Request body:
 
 ```json
 {
-  "display_name": "초코 보호자",
-  "contact_phone": "010-0000-0000",
-  "region": "서울"
+  "display_name": "초코보호자",
+  "contact_phone": "01012345678",
+  "region": "대구시 달서구"
 }
 ```
 
@@ -229,9 +229,9 @@ Response `200`:
 ```json
 {
   "user_id": 101,
-  "display_name": "초코 보호자",
-  "contact_phone": "010-0000-0000",
-  "region": "서울"
+  "display_name": "초코보호자",
+  "contact_phone": "01012345678",
+  "region": "대구시 달서구"
 }
 ```
 
@@ -244,8 +244,9 @@ Contract notes:
 - `display_name`, `contact_phone`, `region` 중 하나 이상은 있어야 한다.
 - 생략한 field는 현재 값을 유지한다.
 - 명시적 `null`은 해당 profile field를 비운다.
-- length limit은 canonical `users` column을 따른다: `display_name <= 150`, `contact_phone <= 30`, `region <= 100`.
-- current implementation은 profile update에서 blank string 자체를 별도 거부하지 않는다.
+- `display_name`은 optional이다. 생략하면 현재 값을 유지하고, 명시적 `null`은 값을 비운다. non-null 값은 trim 후 저장하며, 2자 이상 10자 이하만 허용한다. 값 안의 whitespace, space, tab, newline, control character는 허용하지 않는다. 허용 문자는 한글 완성형 음절, English letters, digits뿐이며 special character와 emoji는 거부한다.
+- `contact_phone`은 optional이다. 생략하면 현재 값을 유지하고, 명시적 `null`은 값을 비운다. non-null 값은 trim 후 저장하며, 정확히 11자리 숫자만 허용한다. hyphen, space, plus sign, parenthesis, 기타 symbol은 거부한다.
+- `region`은 optional이다. 생략하면 현재 값을 유지하고, 명시적 `null`은 값을 비운다. non-null 값은 trim 후 저장하며, blank는 거부하고 최대 100자까지 허용한다. 이 branch의 backend는 district enum/list를 강제하지 않으며, Flutter selection UI가 `"대구시 달서구"` 같은 값을 제한한다.
 - adoption post creation에는 non-blank `display_name`이 필요하다.
 
 Error codes:
@@ -1006,7 +1007,7 @@ curl -H "Authorization: Bearer <JWT>" \
 curl -X PATCH "http://localhost/api/users/me/profile" \
   -H "Authorization: Bearer <JWT>" \
   -H "Content-Type: application/json" \
-  -d '{"display_name":"초코 보호자","contact_phone":"010-0000-0000","region":"서울"}'
+  -d '{"display_name":"초코보호자","contact_phone":"01012345678","region":"대구시 달서구"}'
 
 curl -H "Authorization: Bearer <JWT>" \
   "http://localhost/api/dogs/me?page=0&size=20"
