@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.petnose.api.client.EmbedClient;
 import com.petnose.api.client.QdrantDogVectorClient;
+import com.petnose.api.config.HandoverVerificationProperties;
 import com.petnose.api.domain.entity.AdoptionPost;
 import com.petnose.api.domain.entity.Dog;
 import com.petnose.api.domain.entity.User;
@@ -68,8 +69,8 @@ class HandoverVerificationControllerTest {
 
     private static final String JWT_SECRET = "test-petnose-jwt-secret-change-me-32bytes";
     private static final String MODEL = "dog-nose-identification2:s101_224";
-    private static final double MATCH_THRESHOLD = 0.92;
-    private static final double AMBIGUOUS_THRESHOLD = 0.88;
+    private static final double MATCH_THRESHOLD = 0.70;
+    private static final double AMBIGUOUS_THRESHOLD = 0.70;
     private static final int TOP_K = 5;
     private static final int VECTOR_DIMENSION = 128;
 
@@ -108,6 +109,9 @@ class HandoverVerificationControllerTest {
     @Autowired
     private AdoptionPostRepository adoptionPostRepository;
 
+    @Autowired
+    private HandoverVerificationProperties handoverVerificationProperties;
+
     @MockBean
     private EmbedClient embedClient;
 
@@ -124,6 +128,9 @@ class HandoverVerificationControllerTest {
         dogRepository.deleteAll();
         userRepository.deleteAll();
         reset(embedClient, qdrantDogVectorClient);
+        handoverVerificationProperties.setMatchThreshold(MATCH_THRESHOLD);
+        handoverVerificationProperties.setAmbiguousThreshold(AMBIGUOUS_THRESHOLD);
+        handoverVerificationProperties.setTopK(TOP_K);
         sequence = 0;
     }
 
@@ -451,11 +458,10 @@ class HandoverVerificationControllerTest {
 
     @ParameterizedTest
     @CsvSource({
-            "0.93001, MATCHED, true",
-            "0.92, MATCHED, true",
-            "0.90, AMBIGUOUS, false",
-            "0.88, AMBIGUOUS, false",
-            "0.87999, NOT_MATCHED, false"
+            "0.80630887, MATCHED, true",
+            "0.70001, MATCHED, true",
+            "0.70, MATCHED, true",
+            "0.69999, NOT_MATCHED, false"
     })
     void handoverVerificationAppliesExpectedDogDecisionBoundaries(
             double score,
@@ -475,6 +481,32 @@ class HandoverVerificationControllerTest {
                 .andExpect(jsonPath("$.matched").value(expectedMatched))
                 .andExpect(jsonPath("$.top_match_is_expected").value(true))
                 .andExpect(jsonPath("$.similarity_score").value(score))
+                .andExpect(jsonPath("$.threshold").value(MATCH_THRESHOLD))
+                .andExpect(jsonPath("$.ambiguous_threshold").value(AMBIGUOUS_THRESHOLD))
+                .andReturn();
+
+        assertResponseIsSafe(result);
+    }
+
+    @Test
+    void handoverVerificationCanReturnAmbiguousWhenCustomConfigCreatesBand() throws Exception {
+        handoverVerificationProperties.setMatchThreshold(0.80);
+        handoverVerificationProperties.setAmbiguousThreshold(0.70);
+        User user = saveUser(true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
+        mockEmbedding();
+        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+                .thenReturn(List.of(expectedDogResult(dog, 0.75)));
+
+        MvcResult result = handoverRequest(tokenFor(user), post.getId())
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.decision").value("AMBIGUOUS"))
+                .andExpect(jsonPath("$.matched").value(false))
+                .andExpect(jsonPath("$.top_match_is_expected").value(true))
+                .andExpect(jsonPath("$.similarity_score").value(0.75))
+                .andExpect(jsonPath("$.threshold").value(0.80))
+                .andExpect(jsonPath("$.ambiguous_threshold").value(0.70))
                 .andReturn();
 
         assertResponseIsSafe(result);
