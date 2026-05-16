@@ -82,7 +82,7 @@ class DogRegistrationServiceTest {
                 fileStorageService,
                 embedClient,
                 qdrantDogVectorClient,
-                new NoseVerificationPolicy(0.95),
+                new NoseVerificationPolicy(0.70),
                 transactionTemplate()
         );
         ReflectionTestUtils.setField(service, "expectedVectorDimension", 2048);
@@ -194,6 +194,48 @@ class DogRegistrationServiceTest {
         assertThat(response.topMatch().breed()).isEqualTo("Maltese");
 
         verify(qdrantDogVectorClient, never()).upsert(anyString(), anyList(), anyMap());
+    }
+
+    @Test
+    void registerTreatsScoreAtZeroPointSevenAsDuplicateAndSkipsQdrantUpsert() {
+        List<Double> vector = List.of(0.4, 0.5, 0.6);
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenReturn(new EmbedClient.EmbedResponse(vector, 2048, "dog-nose-identification2:s101_224"));
+        when(qdrantDogVectorClient.search(vector))
+                .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.70, "Maltese", "dogs/candidate/nose.jpg")));
+
+        DogRegisterResponse response = service.register(requestWithoutProfile());
+
+        assertThat(response.registrationAllowed()).isFalse();
+        assertThat(response.status()).isEqualTo("DUPLICATE_SUSPECTED");
+        assertThat(response.verificationStatus()).isEqualTo("DUPLICATE_SUSPECTED");
+        assertThat(response.embeddingStatus()).isEqualTo("SKIPPED_DUPLICATE");
+        assertThat(response.qdrantPointId()).isNull();
+        assertThat(response.topMatch().similarityScore()).isEqualTo(0.70);
+        assertThat(onlyVerificationLog().getSimilarityScore()).isEqualByComparingTo(new BigDecimal("0.70000"));
+
+        verify(qdrantDogVectorClient, never()).upsert(anyString(), anyList(), anyMap());
+    }
+
+    @Test
+    void registerTreatsScoreBelowZeroPointSevenAsNormalAndUpsertsQdrantPoint() {
+        List<Double> vector = List.of(0.4, 0.5, 0.6);
+        when(embedClient.embed(any(byte[].class), anyString(), anyString()))
+                .thenReturn(new EmbedClient.EmbedResponse(vector, 2048, "dog-nose-identification2:s101_224"));
+        when(qdrantDogVectorClient.search(vector))
+                .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.69999, "Maltese", "dogs/candidate/nose.jpg")));
+
+        DogRegisterResponse response = service.register(requestWithoutProfile());
+
+        assertThat(response.registrationAllowed()).isTrue();
+        assertThat(response.status()).isEqualTo("REGISTERED");
+        assertThat(response.verificationStatus()).isEqualTo("VERIFIED");
+        assertThat(response.embeddingStatus()).isEqualTo("COMPLETED");
+        assertThat(response.qdrantPointId()).isEqualTo(response.dogId());
+        assertThat(response.topMatch()).isNull();
+        assertThat(onlyVerificationLog().getSimilarityScore()).isEqualByComparingTo(new BigDecimal("0.69999"));
+
+        verify(qdrantDogVectorClient).upsert(eq(response.dogId()), eq(vector), anyMap());
     }
 
     private VerificationLog onlyVerificationLog() {

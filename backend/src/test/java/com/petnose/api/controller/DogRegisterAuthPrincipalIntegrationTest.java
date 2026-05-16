@@ -300,7 +300,7 @@ class DogRegisterAuthPrincipalIntegrationTest {
         registerUser("dog-duplicate@example.com");
         String accessToken = loginAccessToken("dog-duplicate@example.com");
         when(qdrantDogVectorClient.search(anyList()))
-                .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.98765, "Maltese", "dogs/candidate/nose.jpg")));
+                .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.70, "Maltese", "dogs/candidate/nose.jpg")));
 
         MvcResult result = mockMvc.perform(validDogMultipart(null)
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
@@ -311,7 +311,7 @@ class DogRegisterAuthPrincipalIntegrationTest {
                 .andExpect(jsonPath("$.embedding_status").value("SKIPPED_DUPLICATE"))
                 .andExpect(jsonPath("$.qdrant_point_id").doesNotExist())
                 .andExpect(jsonPath("$.top_match.dog_id").value("candidate-dog"))
-                .andExpect(jsonPath("$.top_match.similarity_score").value(0.98765))
+                .andExpect(jsonPath("$.top_match.similarity_score").value(0.70))
                 .andExpect(jsonPath("$.top_match.breed").value("Maltese"))
                 .andExpect(jsonPath("$.top_match.nose_image_url").doesNotExist())
                 .andReturn();
@@ -321,6 +321,36 @@ class DogRegisterAuthPrincipalIntegrationTest {
         assertThat(dogImageRepository.count()).isEqualTo(1);
         assertThat(onlyVerificationLog().getResult()).isEqualTo(VerificationResult.DUPLICATE_SUSPECTED);
         verify(qdrantDogVectorClient, never()).upsert(anyString(), anyList(), any());
+    }
+
+    @Test
+    void dogRegisterScoreBelowDuplicateThresholdCreatesNormalRegistrationWithBearerToken() throws Exception {
+        registerUser("dog-below-threshold@example.com");
+        String accessToken = loginAccessToken("dog-below-threshold@example.com");
+        when(qdrantDogVectorClient.search(anyList()))
+                .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.69999, "Maltese", "dogs/candidate/nose.jpg")));
+
+        MvcResult result = mockMvc.perform(validDogMultipart(null)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.registration_allowed").value(true))
+                .andExpect(jsonPath("$.status").value("REGISTERED"))
+                .andExpect(jsonPath("$.verification_status").value("VERIFIED"))
+                .andExpect(jsonPath("$.embedding_status").value("COMPLETED"))
+                .andExpect(jsonPath("$.qdrant_point_id").isString())
+                .andExpect(jsonPath("$.max_similarity_score").value(0.69999))
+                .andExpect(jsonPath("$.top_match").doesNotExist())
+                .andReturn();
+
+        Dog dog = onlyDog();
+        assertThat(dog.getStatus()).isEqualTo(DogStatus.REGISTERED);
+        assertThat(onlyVerificationLog().getResult()).isEqualTo(VerificationResult.PASSED);
+
+        String responseDogId = objectMapper.readTree(responseBody(result)).get("dog_id").asText();
+        String qdrantPointId = objectMapper.readTree(responseBody(result)).get("qdrant_point_id").asText();
+        assertThat(qdrantPointId).isEqualTo(responseDogId);
+
+        verify(qdrantDogVectorClient).upsert(anyString(), anyList(), any());
     }
 
     private Dog onlyDog() {

@@ -100,7 +100,7 @@
 - `display_name`: profile update에서 trim 후 2자 이상 10자 이하, 한글 완성형/영문/숫자만 허용한다. 공백, 특수문자, emoji는 거부된다.
 - `contact_phone`: profile update에서 trim 후 하이픈 없는 숫자 11자리만 허용한다.
 - `region`: profile update에서 trim 후 blank는 거부되고 최대 100자다. backend는 district enum/list를 강제하지 않으므로 Flutter UI가 선택지를 제한한다.
-- dog registration 중복 의심: HTTP status가 `200`이고 `registration_allowed=false`이면 실패 toast가 아니라 중복 의심 flow다. `top_match`는 `dog_id`, `similarity_score`, `breed`만 표시 가능한 참고 정보다.
+- dog registration 중복 의심: Qdrant cosine score가 `0.70` 이상이면 중복 의심으로 판정한다. HTTP status가 `200`이고 `registration_allowed=false`이면 실패 toast가 아니라 중복 의심 flow다. `top_match`는 `dog_id`, `similarity_score`, `breed`만 표시 가능한 참고 정보다.
 - 정상 등록: HTTP status가 `201`이고 `registration_allowed=true`이면 `dog_id`를 저장하거나 즉시 dog query를 다시 호출한다.
 - `can_create_post`: Flutter는 `GET /api/dogs/me` 또는 owner detail의 `can_create_post`를 post 생성 버튼 활성화에 사용한다. 단, 최종 권한은 backend service가 다시 검증한다.
 - 공개 목록/상세 privacy: public adoption post list/detail과 public dog detail에는 `nose_image_url`이 오지 않는 것이 정상이다. UI는 `profile_image_url` 중심으로 렌더링한다.

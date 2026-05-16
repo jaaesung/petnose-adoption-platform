@@ -361,6 +361,21 @@ Duplicate suspected contract:
 - `breed`와 `gender`는 DB-level flexibility와 별개로 dog registration API request에서는 required다.
 - `UNKNOWN`은 client가 명시적으로 제출할 수 있는 gender 값이며 DB default로 자동 적용되는 값이 아니다.
 
+Duplicate threshold policy:
+
+- dog registration duplicate detection uses Qdrant cosine search score.
+- current MVP duplicate threshold is `0.70`.
+- duplicate if Qdrant score `>= 0.70`.
+- not duplicate if Qdrant score `< 0.70`.
+- Qdrant candidate search threshold default is `0.70`.
+- Spring duplicate decision threshold default is `0.70`.
+- threshold values are runtime configuration, not DB fields.
+- Qdrant threshold and Spring threshold must stay aligned because Qdrant filters candidates before Spring makes the final duplicate decision.
+- duplicate suspected response remains HTTP `200` with `registration_allowed=false`.
+- normal registration response remains HTTP `201` with `registration_allowed=true`.
+- `top_match` privacy is unchanged and does not expose raw `nose_image_url`.
+- handover verification uses a separate threshold policy and is not changed by dog registration duplicate threshold updates.
+
 Calculation policy:
 
 - `qdrant_point_id`는 normal registration에서 `dog_id`, duplicate suspected registration에서 `null`로 계산한다.
