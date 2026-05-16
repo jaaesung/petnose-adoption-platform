@@ -189,6 +189,8 @@ MVP handover verification check는 stateless다.
 
 `POST /api/dogs/register`는 일부 response field가 이제 `dogs`에 저장되지 않고 계산되더라도 기존 response contract를 유지한다.
 
+Dog registration ownership은 JWT principal-only다. `dogs.owner_user_id`는 Bearer JWT로 resolve된 current active user에서 결정하며, public API contract는 request `user_id`를 ownership input으로 받지 않는다.
+
 계산되는 response field:
 
 - `qdrant_point_id`
@@ -199,13 +201,13 @@ MVP handover verification check는 stateless다.
 - `embedding_status`
   - latest `verification_logs.result`에서 계산
 
-Normal registration은 Qdrant에 point id `dogs.id`로 vector를 저장한다. Duplicate suspected registration은 새 dog에 대한 active Qdrant point를 upsert하지 않아야 한다.
+Normal registration은 Qdrant에 point id `dogs.id`로 vector를 저장한다. Duplicate suspected registration은 새 dog에 대한 active Qdrant point를 upsert하지 않아야 한다. 이 branch는 Qdrant point id policy와 duplicate suspected upsert skip behavior를 변경하지 않는다.
 
 ## 최종 MVP 사용자 흐름
 
 1. `USER`는 `POST /api/auth/register`로 가입하고 `POST /api/auth/login`으로 Bearer access token을 받는다.
 2. Flutter는 `GET /api/users/me`로 profile readiness를 확인하고, 필요하면 `PATCH /api/users/me/profile`로 작성자 표시 정보를 보완한다.
-3. `USER`가 `POST /api/dogs/register`로 nose image와 함께 dog를 등록한다.
+3. 로그인한 `USER`가 Bearer JWT로 인증한 뒤 `POST /api/dogs/register`로 nose image와 함께 dog를 등록한다.
 4. `registration_allowed=false`인 duplicate suspicion은 adoption post creation을 막는다.
 5. Flutter는 등록 후 `GET /api/dogs/me`와 `GET /api/dogs/{dog_id}`로 owner dog query와 post 생성 가능 여부를 확인할 수 있다.
 6. 검증된 dog는 adoption post 생성에 사용할 수 있다.

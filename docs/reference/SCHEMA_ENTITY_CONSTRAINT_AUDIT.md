@@ -25,6 +25,12 @@
 - current API/service policy는 이미 title max 200과 content non-blank를 enforce한다.
 - 남은 production 판단은 runtime DB level에서도 title/content 제약을 강제할 새 Flyway migration을 추가할지, 그리고 title/content boundary constraints에 대한 테스트를 추가하거나 조정할지다.
 
+### Dog registration auth fallback hardening follow-up
+
+- dog registration auth fallback hardening은 이 branch에서 resolved 상태다.
+- Public dog registration API contract는 JWT principal ownership을 사용한다.
+- DB schema 또는 migration change는 없다.
+
 ### 원본 감사 본문 읽는 법
 
 - 아래 constraint matrix와 findings는 이 follow-up을 만든 pre-decision audit snapshot을 보존한다.
@@ -135,7 +141,7 @@ DTO / 요청 모델:
 | field | DBML | clean canonical SQL | backend Flyway migration | JPA entity | service validation | API contract / tests | finding | recommended next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `id` | `char(36) pk`, UUID, Qdrant point id와 동일 | `CHAR(36) NOT NULL PRIMARY KEY` | 동일 | `@Id`, `length=36` | registration에서 UUID 생성, Qdrant point id로 사용 | contract/tests가 `qdrant_point_id`를 계산 필드로 확인 | 정렬됨. JPA nullable 표기는 `@Id`로 충분 | 유지 |
-| `owner_user_id` | `bigint not null` | `BIGINT NOT NULL`, FK users | 동일 | `nullable=false` ManyToOne | JWT principal 우선, auth header 없을 때 local/dev `user_id` fallback | auth principal integration tests가 fallback/override/invalid JWT 정책 확인 | 정렬됨 | 현재 fallback 제거는 별도 비목표이므로 유지 |
+| `owner_user_id` | `bigint not null` | `BIGINT NOT NULL`, FK users | 동일 | `nullable=false` ManyToOne | JWT principal-only ownership. public API의 request `user_id`는 owner 결정에 사용하지 않음 | auth principal integration tests가 principal-only success, ignored `user_id`, missing/invalid/expired JWT, missing user, inactive user 정책 확인 | 정렬됨 | 유지 |
 | `name` | `varchar(100) not null` | `VARCHAR(100) NOT NULL` | 동일 | `nullable=false`, `length=100` | non-blank required, trim | registration API/tests가 required form field로 사용 | 정렬됨 | 유지 |
 | `breed` | `varchar(100) null` | `VARCHAR(100) NULL` | 동일 | `length=100`, nullable | registration service가 non-blank required, trim | API form field는 required처럼 정의되어 있고 tests는 값을 항상 제공 | DB/entity nullable과 service/API required 정책 불일치. 현재는 service-level required 정책으로 작동 | canonical에서 service-only required로 명시하거나 DB `NOT NULL` 변경 여부를 다음 브랜치에서 결정 |
 | `gender` | enum nullable, 값 `MALE/FEMALE/UNKNOWN` | `VARCHAR(10) NULL` + check, default 없음 | 동일 | enum nullable, `length=10` | `DogGender.from()`이 null/blank 거부, `UNKNOWN`은 명시 값으로 허용 | API form field는 required처럼 정의, tests는 값을 제공 | DB/entity nullable과 service/API required 정책 불일치. DB default `UNKNOWN`은 없음 | service-only required로 문서화할지, DB `NOT NULL` + explicit/default 정책으로 갈지 결정 |
@@ -278,4 +284,6 @@ Follow-up note for this profile validation hardening branch:
    - production 동시성 요구가 있으면 service-level active post check를 DB/index/locking 정책과 함께 보강한다.
 
 6. dog registration auth fallback hardening
-   - 현재 local/dev `user_id` fallback은 이번 감사 범위에서 유지한다. 제거 또는 환경별 제한은 별도 보안 hardening 브랜치에서 다룬다.
+   - 이 hardening은 resolved 상태다.
+   - Dog registration은 public API contract에서 JWT principal ownership을 사용한다.
+   - DB schema 또는 migration change는 없다.
