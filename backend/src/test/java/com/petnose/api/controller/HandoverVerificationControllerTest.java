@@ -57,6 +57,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -232,7 +233,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, status);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, 0.95)));
 
         handoverRequest(tokenFor(user), post.getId())
@@ -260,7 +261,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, MATCH_THRESHOLD)));
 
         handoverRequest(tokenFor(user), post.getId())
@@ -398,7 +399,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenThrow(new QdrantDogVectorClient.QdrantClientException(
                         "qdrant down",
                         QdrantDogVectorClient.QdrantOperation.SEARCH,
@@ -419,7 +420,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, 0.98231)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
@@ -438,22 +439,24 @@ class HandoverVerificationControllerTest {
                 .andReturn();
 
         assertResponseIsSafe(result);
-        verify(qdrantDogVectorClient).search(anyList(), eq(TOP_K));
+        verify(qdrantDogVectorClient).searchExpectedDog(anyList(), eq(dog.getId()));
     }
 
     @Test
-    void handoverVerificationUsesConfiguredTopKWhenSearchingQdrant() throws Exception {
+    void handoverVerificationSearchesOnlyTheExpectedDogIdAndDoesNotUseGlobalTopK() throws Exception {
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, 0.95)));
 
         handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk());
 
-        verify(qdrantDogVectorClient).search(eq(List.of(0.1, 0.2, 0.3)), eq(TOP_K));
+        verify(qdrantDogVectorClient).searchExpectedDog(eq(List.of(0.1, 0.2, 0.3)), eq(dog.getId()));
+        verify(qdrantDogVectorClient, never()).search(anyList(), eq(TOP_K));
+        verify(qdrantDogVectorClient, never()).search(anyList());
     }
 
     @ParameterizedTest
@@ -472,7 +475,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, score)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
@@ -489,19 +492,19 @@ class HandoverVerificationControllerTest {
     }
 
     @Test
-    void handoverVerificationCanReturnAmbiguousWhenCustomConfigCreatesBand() throws Exception {
+    void handoverVerificationDoesNotEmitAmbiguousInDirectExpectedDogLogic() throws Exception {
         handoverVerificationProperties.setMatchThreshold(0.80);
         handoverVerificationProperties.setAmbiguousThreshold(0.70);
         User user = saveUser(true);
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, 0.75)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.decision").value("AMBIGUOUS"))
+                .andExpect(jsonPath("$.decision").value("NOT_MATCHED"))
                 .andExpect(jsonPath("$.matched").value(false))
                 .andExpect(jsonPath("$.top_match_is_expected").value(true))
                 .andExpect(jsonPath("$.similarity_score").value(0.75))
@@ -519,7 +522,7 @@ class HandoverVerificationControllerTest {
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.RESERVED);
         String otherDogId = UUID.randomUUID().toString();
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(new QdrantSearchResult("other-point", otherDogId, 0.99123, "Jindo", "other/nose.jpg")));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
@@ -547,7 +550,7 @@ class HandoverVerificationControllerTest {
         String privateBreed = "private-payload-breed";
         String privateNosePath = "dogs/private-dog/nose/private-nose-image.jpg";
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(new QdrantSearchResult(otherPointId, otherDogId, 0.99123, privateBreed, privateNosePath)));
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
@@ -577,7 +580,7 @@ class HandoverVerificationControllerTest {
         Dog dog = saveDog(user, DogStatus.REGISTERED);
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.OPEN);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K))).thenReturn(List.of());
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId()))).thenReturn(List.of());
 
         MvcResult result = handoverRequest(tokenFor(user), post.getId())
                 .andExpect(status().isOk())
@@ -598,7 +601,7 @@ class HandoverVerificationControllerTest {
         AdoptionPost post = savePost(user, dog, AdoptionPostStatus.RESERVED);
         PersistenceSnapshot before = snapshot(post, dog);
         mockEmbedding();
-        when(qdrantDogVectorClient.search(anyList(), eq(TOP_K)))
+        when(qdrantDogVectorClient.searchExpectedDog(anyList(), eq(dog.getId())))
                 .thenReturn(List.of(expectedDogResult(dog, 0.95)));
 
         handoverRequest(tokenFor(user), post.getId())

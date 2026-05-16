@@ -104,12 +104,12 @@
 - 정상 등록: HTTP status가 `201`이고 `registration_allowed=true`이면 `dog_id`를 저장하거나 즉시 dog query를 다시 호출한다.
 - `can_create_post`: Flutter는 `GET /api/dogs/me` 또는 owner detail의 `can_create_post`를 post 생성 버튼 활성화에 사용한다. 단, 최종 권한은 backend service가 다시 검증한다.
 - 공개 목록/상세 privacy: public adoption post list/detail과 public dog detail에는 `nose_image_url`이 오지 않는 것이 정상이다. UI는 `profile_image_url` 중심으로 렌더링한다.
-- handover decision 렌더링:
-  - `MATCHED`: expected dog와 일치. 거래 전 확인 성공 signal로 표시한다.
-  - `AMBIGUOUS`: 기준 근처지만 확정 불가. 재촬영을 안내한다.
-  - `NOT_MATCHED`: 다른 dog가 top result이거나 expected dog score가 낮다. 거래 전 확인 필요 경고로 표시한다.
-  - `NO_MATCH_CANDIDATE`: Qdrant 후보가 없다. 재촬영 또는 현장 확인 안내로 표시한다.
-- dog registration duplicate detection과 handover verification은 current MVP에서 모두 `0.70`을 same-dog threshold로 사용한다. handover는 top match가 expected dog이고 score가 `0.70` 이상이면 `MATCHED`, top match가 expected dog가 아니거나 score가 `0.70` 미만이면 `NOT_MATCHED`, Qdrant 후보가 없으면 `NO_MATCH_CANDIDATE`다. 기본 `0.70 / 0.70` 정책에서는 `AMBIGUOUS`가 일반 runtime에서 기대되지 않으며, `top_match_is_expected=false`인 `NOT_MATCHED`는 UI에서 신중하게 표시한다.
+- handover decision 렌더링: Flutter는 먼저 `matched`로 분기한다. `matched=true`는 post의 expected dog와 같은 dog로 확인되었다는 뜻이고, `matched=false`는 같은 dog로 검증되지 않았다는 뜻이다. `decision`은 explanation/reason code다.
+  - `MATCHED`: expected dog candidate score가 `0.70` 이상이다.
+  - `NOT_MATCHED`: expected dog candidate가 반환되었지만 score가 `0.70` 미만이거나 defensive mismatch가 발생했다.
+  - `NO_MATCH_CANDIDATE`: expected dog Qdrant candidate가 없다. 재촬영 또는 현장 확인 안내로 표시한다.
+- `AMBIGUOUS`는 enum compatibility로 남아 있지만 default MVP direct expected-dog handover runtime에서는 기대되지 않는다.
+- dog registration duplicate detection과 handover verification은 current MVP에서 모두 `0.70`을 same-dog threshold로 사용한다. handover는 post의 expected dog와 직접 비교하는 safety check이며 collection-wide nearest-dog identity search가 아니다. completion은 여전히 별도 status update가 필요하다.
 - 완료 처리: handover `MATCHED`가 와도 backend는 자동 완료하지 않는다. 완료 버튼은 owner-only `PATCH /api/adoption-posts/{post_id}/status` with `COMPLETED` flow로 분리한다.
 
 ## 6. Privacy / exposure rules

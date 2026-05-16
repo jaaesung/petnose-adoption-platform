@@ -375,6 +375,7 @@ Duplicate threshold policy:
 - normal registration response remains HTTP `201` with `registration_allowed=true`.
 - `top_match` privacy is unchanged and does not expose raw `nose_image_url`.
 - handover verification is a separate stateless flow, but current MVP aligns the same/different threshold to the same Qdrant cosine score `0.70` standard for simplicity.
+- In normal registration, `max_similarity_score=0.0` can mean no Qdrant candidate was returned above `score_threshold=0.70`; it is not necessarily a literal model similarity score of zero.
 
 Calculation policy:
 
@@ -848,16 +849,19 @@ Post status policy:
 Expected dog policy:
 
 - `expected_dog_id`는 `adoption_posts.dog_id`다.
+- `post_id`는 `adoption_posts.id`다.
+- `expected_dog_id`는 `dogs.id`와 같고 Qdrant point id와도 같다.
 - expected dog가 존재하지 않으면 `DOG_NOT_FOUND`를 반환한다.
 - expected dog는 `REGISTERED`여야 한다.
 - expected dog가 `REGISTERED`가 아니면 `DOG_NOT_VERIFIED`를 반환한다.
 
-Normal `200` decision values:
+Default MVP `200` decision values:
 
 - `MATCHED`
-- `AMBIGUOUS`
 - `NOT_MATCHED`
 - `NO_MATCH_CANDIDATE`
+
+`AMBIGUOUS` enum value는 response compatibility를 위해 남아 있지만 direct expected-dog MVP runtime에서는 기본적으로 반환하지 않는다.
 
 Response `200`, matched:
 
@@ -877,24 +881,6 @@ Response `200`, matched:
 }
 ```
 
-Response `200`, ambiguous custom-config only. Default MVP runtime has no ambiguous band because both thresholds are `0.70`; the example below requires custom runtime configuration where `ambiguous_threshold < match_threshold`.
-
-```json
-{
-  "post_id": 501,
-  "expected_dog_id": "dog-uuid",
-  "matched": false,
-  "decision": "AMBIGUOUS",
-  "similarity_score": 0.75,
-  "threshold": 0.80,
-  "ambiguous_threshold": 0.70,
-  "top_match_is_expected": true,
-  "model": "dog-nose-identification2:s101_224",
-  "dimension": 2048,
-  "message": "유사도가 기준에 근접하지만 확정하기 어렵습니다. 비문 이미지를 다시 촬영해주세요."
-}
-```
-
 Response `200`, not matched:
 
 ```json
@@ -906,7 +892,7 @@ Response `200`, not matched:
   "similarity_score": 0.69999,
   "threshold": 0.70,
   "ambiguous_threshold": 0.70,
-  "top_match_is_expected": false,
+  "top_match_is_expected": true,
   "model": "dog-nose-identification2:s101_224",
   "dimension": 2048,
   "message": "분양글에 등록된 강아지와 일치하지 않습니다. 거래 전 확인이 필요합니다."
@@ -934,31 +920,43 @@ Response `200`, no match candidate:
 Decision algorithm:
 
 - `expected_dog_id = adoption_posts.dog_id`
-- `top_result = first Qdrant search result`
-- default MVP handover policy uses simple Qdrant cosine score `0.70` as the same-dog threshold.
-- top match must be the expected dog.
+- Python Embed는 handover image에서 `vector`, `dimension`, `model`만 반환한다.
+- Qdrant가 cosine similarity `score`를 생성하고 Spring이 threshold policy를 적용한다.
+- Spring은 handover image embedding vector로 Qdrant search를 수행하되, query filter를 `is_active=true`와 `dog_id=expected_dog_id`로 제한한다.
+- 이 direct expected-dog query에는 `score_threshold`를 보내지 않는다. expected dog point가 존재하지만 `0.70` 미만인 경우에도 Spring이 score를 받아 `NOT_MATCHED`로 판단해야 하기 때문이다.
+- default MVP handover policy uses Qdrant cosine score `0.70` as the same-dog threshold.
+- `matched`가 canonical yes/no result이고 `decision`은 reason code다.
 
-Qdrant result가 없는 경우:
+Expected dog candidate가 반환되지 않는 경우:
 
 - `decision = NO_MATCH_CANDIDATE`
 - `matched = false`
 - `similarity_score = null`
 - `top_match_is_expected = false`
 
-Default MVP policy에서 `top_result.dog_id == expected_dog_id`이고 `score >= 0.70`인 경우:
+Expected dog candidate가 반환되고 `candidate.dog_id == expected_dog_id`이며 `score >= 0.70`인 경우:
 
 - `decision = MATCHED`
 - `matched = true`
+- `similarity_score = score`
 - `top_match_is_expected = true`
 
-Default MVP policy에서 그 외의 경우:
+Expected dog candidate가 반환되고 `candidate.dog_id == expected_dog_id`이며 `score < 0.70`인 경우:
 
 - `decision = NOT_MATCHED`
 - `matched = false`
-- `top_match_is_expected = true` only if `top_result.dog_id == expected_dog_id`
-- `top_match_is_expected = false` if `top_result.dog_id` differs from `expected_dog_id`
+- `similarity_score = score`
+- `top_match_is_expected = true`
 
-`AMBIGUOUS` remains a supported enum/custom-config behavior. It can be emitted only if runtime configuration creates an ambiguous band where `ambiguous_threshold < match_threshold`; with default `0.70 / 0.70`, `AMBIGUOUS` is not expected in normal MVP runtime.
+Defensive case에서 filtered query가 `candidate.dog_id != expected_dog_id`를 반환하는 경우:
+
+- `decision = NOT_MATCHED`
+- `matched = false`
+- `similarity_score = score`
+- `top_match_is_expected = false`
+- 다른 dog id 또는 Qdrant payload details는 response에 노출하지 않는다.
+
+`AMBIGUOUS`는 legacy/custom compatibility enum으로 남아 있지만 default MVP direct expected-dog handover runtime에서는 기대하지 않는다.
 
 Privacy rules:
 
@@ -975,7 +973,7 @@ Config defaults:
 - `match_threshold = 0.70`
 - `ambiguous_threshold = 0.70`
 - `top_k = 5`
-- 이 값들은 runtime configuration이며 DB field가 아니다.
+- 이 값들은 runtime configuration이며 DB field가 아니다. Direct expected-dog Qdrant query itself uses `limit=1`.
 
 Failure behavior:
 
