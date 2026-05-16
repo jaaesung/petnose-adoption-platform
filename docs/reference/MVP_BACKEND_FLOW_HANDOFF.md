@@ -109,6 +109,7 @@
   - `AMBIGUOUS`: 기준 근처지만 확정 불가. 재촬영을 안내한다.
   - `NOT_MATCHED`: 다른 dog가 top result이거나 expected dog score가 낮다. 거래 전 확인 필요 경고로 표시한다.
   - `NO_MATCH_CANDIDATE`: Qdrant 후보가 없다. 재촬영 또는 현장 확인 안내로 표시한다.
+- dog registration duplicate threshold와 handover threshold는 별도 정책이다. duplicate suspected 기준 `0.70`을 통과한 pair도 handover score가 `0.92` 미만이거나 top result가 expected dog가 아니면 `MATCHED`가 아니라 `AMBIGUOUS` 또는 `NOT_MATCHED`로 렌더링해야 한다.
 - 완료 처리: handover `MATCHED`가 와도 backend는 자동 완료하지 않는다. 완료 버튼은 owner-only `PATCH /api/adoption-posts/{post_id}/status` with `COMPLETED` flow로 분리한다.
 
 ## 6. Privacy / exposure rules
