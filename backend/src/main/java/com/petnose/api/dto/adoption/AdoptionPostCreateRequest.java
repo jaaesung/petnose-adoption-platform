@@ -1,15 +1,17 @@
 package com.petnose.api.dto.adoption;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
+import org.springframework.web.multipart.MultipartFile;
 
 public record AdoptionPostCreateRequest(
-        @JsonProperty("dog_id")
-        String dogId,
-        @JsonProperty("title")
+        Long noseVerificationId,
+        String dogName,
+        String breed,
+        String gender,
+        String birthDate,
+        String description,
         String title,
-        @JsonProperty("content")
         String content,
-        @JsonProperty("status")
-        String status
+        String status,
+        MultipartFile profileImage
 ) {
 }

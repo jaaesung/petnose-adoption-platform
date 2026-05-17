@@ -5,25 +5,29 @@
 - 감사 보고서
 - 원본 감사 본문은 follow-up docs/schema alignment 이전 snapshot
 - 원본 감사 자체는 구현 변경 없음 / active canonical 변경 없음
-- 현재 문서는 follow-up branch의 documentation-only canonical decision note를 포함
+- 현재 문서는 follow-up branch들의 canonical decision과 runtime migration alignment note를 포함
 
-## Post-audit canonical decision for docs/schema alignment branch
+## Post-audit canonical decision for schema/runtime alignment
 
-이 follow-up docs/schema alignment branch는 감사 결과를 바탕으로 active canonical docs를 current MVP service behavior 쪽으로 정렬한다.
+이 follow-up schema/runtime alignment는 감사 결과를 바탕으로 active canonical docs와 runtime MySQL schema를 current MVP service behavior 쪽으로 정렬한다.
 
 - `adoption_posts.title`은 current JPA/service validation에 맞춰 canonical docs에서 200자 제한으로 정렬한다.
 - `adoption_posts.content`는 current JPA/service validation에 맞춰 canonical docs에서 required/non-blank 정책으로 정렬한다.
 - `dogs.breed`와 `dogs.gender`는 dog registration API에서는 required로 문서화하되, operational/import flexibility를 위해 DB-level nullability는 유지하는 결정으로 정리한다.
 - `dog_images.mime_type`, `dog_images.file_size`, `dog_images.sha256`은 service-created row에서 기대되는 metadata로 문서화하되, migration/import flexibility를 위해 DB-level nullability는 유지하는 결정으로 정리한다.
-- 이 follow-up branch는 Java code, tests, runtime Flyway migration, runtime behavior를 변경하지 않는다.
+- runtime Flyway는 새 `V2__align_adoption_post_content_constraints.sql` migration으로 `adoption_posts.title VARCHAR(200) NOT NULL`과 `adoption_posts.content TEXT NOT NULL`을 강제한다.
+- runtime Flyway는 새 `V3__add_nose_verification_attempts.sql` migration으로 pre-post nose verification attempt를 저장한다.
+- `AdoptionPost.status` JPA column length도 runtime schema와 같은 20자로 정렬한다.
+- tests는 adoption post title/content boundary, nose verification attempt consumption, entity/runtime migration shape를 고정한다.
 
 ### 현재 branch 적용 후 상태
 
-- active DBML과 documentation-only clean canonical SQL은 이제 `adoption_posts.title`을 200자로, `adoption_posts.content`를 `NOT NULL` / required 정책으로 문서화한다.
-- runtime Flyway V1은 이 branch에서 변경하지 않았다. V1은 여전히 `adoption_posts.title VARCHAR(255) NOT NULL`, `adoption_posts.content TEXT NULL`을 생성한다.
-- 따라서 documentation-only clean schema와 runtime migration은 별도 migration branch가 승인되기 전까지 이 두 제약에서 의도적으로 다를 수 있다.
-- current API/service policy는 이미 title max 200과 content non-blank를 enforce한다.
-- 남은 production 판단은 runtime DB level에서도 title/content 제약을 강제할 새 Flyway migration을 추가할지, 그리고 title/content boundary constraints에 대한 테스트를 추가하거나 조정할지다.
+- active DBML과 documentation-only clean canonical SQL은 `adoption_posts.title`을 200자로, `adoption_posts.content`를 `NOT NULL` / required 정책으로 문서화한다.
+- active DBML과 documentation-only clean canonical SQL은 `nose_verification_attempts`를 포함한다.
+- runtime Flyway V1은 historical baseline으로 남고, V2/V3가 최종 runtime schema를 canonical policy에 맞춘다.
+- 새로 구축되는 runtime DB는 V1+V2+V3 적용 후 title max 200, content NOT NULL, one-time nose verification attempt 제약을 가진다.
+- current API/service policy는 title max 200, content non-blank, `nose_verification_id` required/one-time consumption을 enforce한다.
+- 남은 production 판단은 active post uniqueness 같은 동시성 hardening이며, title/content schema mismatch는 resolved 상태다.
 
 ### Dog registration auth fallback hardening follow-up
 
@@ -33,10 +37,9 @@
 
 ### 원본 감사 본문 읽는 법
 
-- 아래 constraint matrix와 findings는 이 follow-up을 만든 pre-decision audit snapshot을 보존한다.
-- DBML / clean canonical SQL / Flyway V1이 서로 aligned라고 적힌 행은 follow-up docs/schema alignment 이전 감사 시점 설명이다.
-- 이 branch 이후 `adoption_posts.title` / `adoption_posts.content` finding은 documentation-only canonical level에서는 부분 해결되었지만, runtime Flyway level에서는 아직 해결되지 않았다.
-- 아래 본문은 Java code, tests, runtime DB behavior가 이 branch에서 바뀌었다는 뜻으로 읽으면 안 된다.
+- 아래 constraint matrix와 findings는 원본 감사 snapshot을 보존하되, `adoption_posts.title` / `adoption_posts.content` 관련 행은 현재 runtime V2 alignment 상태를 반영한다.
+- Flyway V1만 보면 여전히 historical baseline 제약이 보이지만, runtime 최종 schema 기준은 V1+V2다.
+- 원본 감사 당시의 recommended next action 중 title/content runtime migration과 boundary test는 이 branch에서 resolved 상태로 본다.
 
 ## 검토 기준
 
@@ -58,6 +61,8 @@
 런타임 DB 마이그레이션:
 
 - `backend/src/main/resources/db/migration/V1__baseline.sql`
+- `backend/src/main/resources/db/migration/V2__align_adoption_post_content_constraints.sql`
+- `backend/src/main/resources/db/migration/V3__add_nose_verification_attempts.sql`
 
 JPA 엔티티:
 
@@ -65,6 +70,7 @@ JPA 엔티티:
 - `backend/src/main/java/com/petnose/api/domain/entity/Dog.java`
 - `backend/src/main/java/com/petnose/api/domain/entity/DogImage.java`
 - `backend/src/main/java/com/petnose/api/domain/entity/VerificationLog.java`
+- `backend/src/main/java/com/petnose/api/domain/entity/NoseVerificationAttempt.java`
 - `backend/src/main/java/com/petnose/api/domain/entity/AdoptionPost.java`
 
 Enum:
@@ -74,6 +80,7 @@ Enum:
 - `backend/src/main/java/com/petnose/api/domain/enums/DogStatus.java`
 - `backend/src/main/java/com/petnose/api/domain/enums/DogImageType.java`
 - `backend/src/main/java/com/petnose/api/domain/enums/VerificationResult.java`
+- `backend/src/main/java/com/petnose/api/domain/enums/NoseVerificationStatus.java`
 - `backend/src/main/java/com/petnose/api/domain/enums/AdoptionPostStatus.java`
 
 DTO / 요청 모델:
@@ -82,6 +89,8 @@ DTO / 요청 모델:
 - `backend/src/main/java/com/petnose/api/dto/auth/LoginRequest.java`
 - `backend/src/main/java/com/petnose/api/dto/user/UserProfileUpdateRequest.java`
 - `backend/src/main/java/com/petnose/api/dto/registration/DogRegisterRequest.java`
+- `backend/src/main/java/com/petnose/api/dto/nose/NoseVerificationRequest.java`
+- `backend/src/main/java/com/petnose/api/dto/nose/NoseVerificationResponse.java`
 - `backend/src/main/java/com/petnose/api/dto/adoption/AdoptionPostCreateRequest.java`
 - `backend/src/main/java/com/petnose/api/dto/adoption/AdoptionPostStatusUpdateRequest.java`
 - `backend/src/main/java/com/petnose/api/dto/dog/DogListItemResponse.java`
@@ -94,11 +103,13 @@ DTO / 요청 모델:
 
 - `backend/src/main/java/com/petnose/api/service/AuthService.java`
 - `backend/src/main/java/com/petnose/api/service/DogRegistrationService.java`
+- `backend/src/main/java/com/petnose/api/service/NoseVerificationService.java`
 - `backend/src/main/java/com/petnose/api/service/DogQueryService.java`
 - `backend/src/main/java/com/petnose/api/service/AdoptionPostService.java`
 - `backend/src/main/java/com/petnose/api/service/HandoverVerificationService.java`
 - `backend/src/main/java/com/petnose/api/service/FileStorageService.java`
 - `backend/src/main/java/com/petnose/api/controller/DogRegistrationController.java`
+- `backend/src/main/java/com/petnose/api/controller/NoseVerificationController.java`
 
 관찰한 테스트:
 
@@ -106,6 +117,8 @@ DTO / 요청 모델:
 - `backend/src/test/java/com/petnose/api/controller/AuthUserApiIntegrationTest.java`
 - `backend/src/test/java/com/petnose/api/controller/DogRegistrationControllerTest.java`
 - `backend/src/test/java/com/petnose/api/controller/DogRegisterAuthPrincipalIntegrationTest.java`
+- `backend/src/test/java/com/petnose/api/controller/NoseVerificationControllerTest.java`
+- `backend/src/test/java/com/petnose/api/service/NoseVerificationServiceTest.java`
 - `backend/src/test/java/com/petnose/api/controller/DogQueryControllerTest.java`
 - `backend/src/test/java/com/petnose/api/controller/AdoptionPostCreateControllerTest.java`
 - `backend/src/test/java/com/petnose/api/service/AdoptionPostServiceTest.java`
@@ -115,12 +128,11 @@ DTO / 요청 모델:
 
 ## 요약 결론
 
-- 핵심 5개 active domain table 모델은 유지되어 있다. active 테이블은 `users`, `dogs`, `dog_images`, `verification_logs`, `adoption_posts`로 정리되어 있으며, 런타임 Flyway V1도 clean canonical SQL과 같은 5개 테이블을 생성한다.
+- 핵심 active domain table 모델은 `users`, `dogs`, `dog_images`, `verification_logs`, `nose_verification_attempts`, `adoption_posts`로 정리되어 있다. 런타임 Flyway V1은 historical 5개 baseline table을 생성하고, V3가 `nose_verification_attempts`를 추가한다.
 - active role은 `USER`, `ADMIN`만 유지되어 있다. legacy role/table/API가 active scope로 재도입된 흔적은 발견하지 못했다.
-- 원본 감사 시점에는 DBML, clean canonical SQL, 런타임 Flyway V1의 주요 필드 제약이 서로 잘 맞았고, 그 대신 `adoption_posts.title`, `adoption_posts.content`가 canonical docs와 current service policy 사이에서 명확히 어긋났다.
-- 이 follow-up branch 이후에는 DBML과 documentation-only clean canonical SQL이 `adoption_posts.title` 200자 / `adoption_posts.content` required 정책으로 current service policy에 맞춰졌다.
-- runtime Flyway V1은 의도적으로 변경하지 않았으므로, runtime DB는 별도 migration 전까지 title 201-255자와 nullable content를 허용할 수 있다. API/service는 계속 title max 200과 content non-blank를 enforce한다.
-- 생산 전 남은 결정은 이 documentation-only canonical decision을 runtime DB migration과 boundary test로 강제할지 여부다.
+- 원본 감사 시점에는 `adoption_posts.title`, `adoption_posts.content`가 canonical docs와 current service policy 사이에서 명확히 어긋났다.
+- current branch 이후에는 DBML, documentation-only clean canonical SQL, JPA entity, service validation, runtime Flyway final schema(V1+V2+V3), tests가 `adoption_posts.title` 200자 / `adoption_posts.content` required / pre-post nose verification attempt 정책으로 맞춰졌다.
+- 생산 전 남은 결정은 active post uniqueness 등 service-level 정책을 DB/index/locking으로 더 강하게 보장할지 여부다.
 
 ## Constraint Matrix
 
@@ -177,15 +189,34 @@ DTO / 요청 모델:
 | `failure_reason` | `varchar(1000) null` | `VARCHAR(1000) NULL` | 동일 | `length=1000`, nullable | 실패 시 저장 | API error와 별개로 내부 log | 정렬됨 | 유지 |
 | `created_at` | timestamp not null default current | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | 동일 | `Instant`, set on persist | entity lifecycle | API dog verification log DTO는 `Instant` | 정렬됨 | 유지 |
 
+### nose_verification_attempts
+
+| field | DBML | clean canonical SQL | backend Flyway migration | JPA entity | service validation | API contract / tests | finding | recommended next action |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `id` | `bigint pk increment` | `BIGINT AUTO_INCREMENT` | V3 생성 | `@Id`, identity | nose verification 성공/중복 분기에서 생성 | response `nose_verification_id`로 노출, create post request에서 사용 | 정렬됨 | 유지 |
+| `requested_by_user_id` | `bigint not null` FK users | `BIGINT NOT NULL` FK users | V3 생성 | `nullable=false` | attempt owner와 current user 일치 검증 | tests가 owner mismatch를 `NOSE_VERIFICATION_OWNER_MISMATCH`로 확인 | 정렬됨 | 유지 |
+| `nose_image_path` | `varchar(500) not null unique` | `VARCHAR(500) NOT NULL` unique | V3 생성 | `length=500`, nullable=false | pre-post `nose_image` 저장 경로, post 성공 시 `dog_images.NOSE`로 연결 | tests가 success 후 NOSE image row 생성을 확인 | 정렬됨 | 유지 |
+| `nose_image_mime_type` | `varchar(100) null` | `VARCHAR(100) NULL` | V3 생성 | nullable | adoption post 단계에서 NOSE row metadata로 복사 | integration tests가 row 생성 확인 | 정렬됨 | 유지 |
+| `nose_image_file_size` | `bigint null` | `BIGINT NULL` | V3 생성 | nullable | stored file read metadata | service tests 확인 | 정렬됨 | 유지 |
+| `nose_image_sha256` | `char(64) null` | `CHAR(64) NULL` | V3 생성 | length 64, nullable | stored file read metadata | service tests 확인 | 정렬됨 | 유지 |
+| `result` | enum not null | `VARCHAR(40) NOT NULL` + check | V3 생성 | enum string `nullable=false`, length 40 | `PASSED`만 post 생성 가능, `DUPLICATE_SUSPECTED`는 차단 | tests가 passed/duplicate/consumed/expired/owner 정책 확인 | 정렬됨 | 유지 |
+| `similarity_score` | `decimal(6,5) null` | `DECIMAL(6, 5) NULL` | V3 생성 | `BigDecimal`, precision 6, scale 5 | 중복 검색 최고 점수 저장 | service tests 확인 | 정렬됨 | 유지 |
+| `candidate_dog_id` | `char(36) null` FK dogs | `CHAR(36) NULL` FK dogs | V3 생성 | `length=36`, nullable | 필요 시 top candidate 저장 | response는 다른 dog nose URL을 노출하지 않음 | 정렬됨 | 유지 |
+| `model`, `dimension`, `failure_reason` | nullable metadata | nullable columns | V3 생성 | nullable | attempt 결과 내부 추적 | app handoff에는 내부 구조 과노출 금지 | 정렬됨 | 유지 |
+| `expires_at` | timestamp not null | `TIMESTAMP NOT NULL` | V3 생성 | `Instant`, nullable=false | 생성 후 24시간 유효, 만료 시 post 생성 차단 | tests가 `NOSE_VERIFICATION_EXPIRED` 확인 | 정렬됨 | 유지 |
+| `consumed_at` | timestamp null | `TIMESTAMP NULL` | V3 생성 | `Instant`, nullable | post 생성 성공 시 set | tests가 성공 후 consumed 처리와 재사용 차단 확인 | 정렬됨 | 유지 |
+| `consumed_by_post_id` | nullable FK adoption_posts | `BIGINT NULL` FK adoption_posts | V3 생성 | nullable `Long` | post 생성 성공 시 saved post id 저장 | tests가 consumed post id 확인 | 정렬됨 | 유지 |
+| `created_at` | timestamp not null default current | `TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP` | V3 생성 | `Instant`, set on persist | entity lifecycle | entity shape test 확인 | 정렬됨 | 유지 |
+
 ### adoption_posts
 
 | field | DBML | clean canonical SQL | backend Flyway migration | JPA entity | service validation | API contract / tests | finding | recommended next action |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `author_user_id` | `bigint not null` | `BIGINT NOT NULL` FK users | 동일 | `nullable=false` ManyToOne | authenticated active user required, display_name non-blank required | tests가 author_user_id 미노출과 display_name 필요 정책 확인 | 정렬됨 | 유지 |
-| `dog_id` | `char(36) not null` | `CHAR(36) NOT NULL` FK dogs | 동일 | `nullable=false` ManyToOne | owner dog, REGISTERED, latest PASSED, active post 없음 | tests가 owner/status/latest verification/active post 정책 확인 | 정렬됨 | 유지 |
-| `title` | `varchar(255) not null` | `VARCHAR(255) NOT NULL` | 동일 | `nullable=false`, `length=200` | non-blank, trim 후 max 200 | API contract는 요청 필드를 두지만 200/255 길이 기준은 명확하지 않음. tests는 길이 경계를 직접 검증하지 않음 | 명확한 제약 불일치 | canonical 길이를 200으로 낮출지, code/service를 255로 넓힐지 결정. 현재 서비스 정책 유지가 목적이면 docs/schema/runtime 정렬 브랜치가 필요 |
-| `content` | `text null` | `TEXT NULL` | 동일 | `nullable=false`, `TEXT` | non-blank required, trim 저장 | API contract는 요청 필드를 두지만 DB nullable과 service required 차이를 명시하지 않음. tests는 성공 생성과 profile/display/status 정책 중심 | 명확한 nullability 불일치 | content required가 MVP 정책이면 canonical DBML/SQL/API contract를 `NOT NULL`/required로 정렬. nullable이 의도라면 entity/service/test 수정 필요 |
-| `status` | enum not null default `DRAFT` | `VARCHAR(20) NOT NULL DEFAULT 'DRAFT'` + check | 동일 | enum `nullable=false`, `length=32`, default DRAFT | create는 DRAFT/OPEN만 허용, update transition 제한 | tests가 create/status/list/detail transition 확인 | 값 집합은 정렬됨. JPA length 32와 DB length 20은 현재 enum 값에서는 영향 작음 | 선택적 cleanup으로 entity length 20 정렬 가능 |
+| `dog_id` | `char(36) not null` | `CHAR(36) NOT NULL` FK dogs | 동일 | `nullable=false` ManyToOne | create request dog 기본 정보로 생성된 dog id 저장 | tests가 post create success 후 dog/NOSE/PROFILE/log/post 생성을 확인 | 정렬됨 | 유지 |
+| `title` | `varchar(200) not null` | `VARCHAR(200) NOT NULL` | V1 historical `VARCHAR(255)`, V2 final `VARCHAR(200) NOT NULL` | `nullable=false`, `length=200` | non-blank, trim 후 max 200 | API contract와 boundary tests가 200자 제한을 고정 | 정렬됨 | 유지 |
+| `content` | `text not null` | `TEXT NOT NULL` | V1 historical `TEXT NULL`, V2 final `TEXT NOT NULL` | `nullable=false`, `TEXT` | non-blank required, trim 저장 | API contract와 tests가 content required 정책을 고정 | 정렬됨 | 유지 |
+| `status` | enum not null default `DRAFT` | `VARCHAR(20) NOT NULL DEFAULT 'DRAFT'` + check | 동일 | enum `nullable=false`, `length=20`, default DRAFT | create는 DRAFT/OPEN만 허용, update transition 제한 | tests가 create/status/list/detail transition 확인 | 정렬됨 | 유지 |
 | `published_at` | optional | `TIMESTAMP NULL` | 동일 | `LocalDateTime`, nullable | OPEN 생성/전환 시 설정 | tests가 OPEN일 때 값, DRAFT일 때 null 확인 | 정렬됨 | 유지 |
 | `closed_at` | optional | `TIMESTAMP NULL` | 동일 | `LocalDateTime`, nullable | CLOSED/COMPLETED 시 설정 | tests가 terminal 상태에서 closed_at 확인 | 정렬됨 | 유지 |
 | `created_at`, `updated_at` | timestamp | `TIMESTAMP`, `updated_at` auto update | 동일 | `LocalDateTime` lifecycle | service 별도 검증 없음 | adoption DTO/tests는 zone 없는 timestamp 문자열을 기대 | DB는 정렬됨. 전체 API에서는 dog 쪽 `Instant`와 post 쪽 `LocalDateTime` 표현이 다름 | 의도된 API 표현이면 contract에 명시. 아니면 timestamp 타입 정렬 브랜치 필요 |
@@ -193,19 +224,15 @@ DTO / 요청 모델:
 
 ## Findings
 
-### P1. `adoption_posts.title` 길이 기준 불일치
+### P1. `adoption_posts.title` 길이 기준 불일치 - resolved
 
-- evidence: DBML, clean canonical SQL, Flyway V1은 `title`을 `VARCHAR(255) NOT NULL`로 둔다. `AdoptionPost` 엔티티는 `length=200`이고, `AdoptionPostService`는 trim 후 200자를 초과하면 `VALIDATION_FAILED`로 거부한다. API contract와 tests에는 200/255 경계가 명시적으로 고정되어 있지 않다.
-- impact: DB에는 201-255자 제목을 저장할 수 있지만 API/service는 거부한다. canonical schema만 보는 작업자와 backend 구현을 보는 작업자가 서로 다른 제한을 전제로 삼을 수 있다.
-- recommended fix options: 현재 backend 정책을 유지한다면 DBML/clean SQL/API contract를 200자로 정렬하고, 런타임 DB에도 강제해야 한다면 별도 Flyway migration을 추가한다. 반대로 DB canonical 255가 맞다면 entity/service/test를 255로 넓힌다.
-- safest next branch type: combined. 먼저 docs/schema canonical 결정, 이후 필요하면 code/test 또는 schema/migration을 분리한다.
+- resolution: active DBML, clean canonical SQL, API contract, entity, service validation, boundary tests, and runtime Flyway final schema(V1+V2)가 200자 제한으로 정렬되었다.
+- runtime note: V1은 historical baseline으로 남아 있고, V2가 `title VARCHAR(200) NOT NULL`을 적용한다.
 
-### P1. `adoption_posts.content` nullability / required 정책 불일치
+### P1. `adoption_posts.content` nullability / required 정책 불일치 - resolved
 
-- evidence: DBML, clean canonical SQL, Flyway V1은 `content TEXT NULL`이다. `AdoptionPost` 엔티티는 `nullable=false`이고, `AdoptionPostService`는 content non-blank를 요구한다. API contract는 content 필드를 포함하지만 DB nullable과 service required 차이를 별도 설명하지 않는다.
-- impact: DB 직접 쓰기나 향후 import 경로에서는 null content가 들어갈 수 있지만, 현재 API/service/JPA 정책은 required로 작동한다. canonical required 여부가 불명확하다.
-- recommended fix options: MVP에서 게시글 본문이 필수라면 DBML/clean SQL/API contract를 `NOT NULL`/required로 정렬하고, 런타임 DB 강제가 필요하면 새 migration을 만든다. 본문 nullable이 의도라면 entity/service/test를 nullable 허용으로 바꾼다.
-- safest next branch type: combined. canonical 결정을 먼저 문서화한 뒤 schema/migration 또는 code/test 변경을 분리한다.
+- resolution: active DBML, clean canonical SQL, API contract, entity, service validation, tests, and runtime Flyway final schema(V1+V2)가 required / `NOT NULL` 정책으로 정렬되었다.
+- runtime note: V1은 historical baseline으로 남아 있고, V2가 `content TEXT NOT NULL`을 적용한다.
 
 ### P2. `dogs.breed` service-required vs DB nullable
 
@@ -266,16 +293,17 @@ Follow-up note for this profile validation hardening branch:
 ## Recommended Next Work
 
 1. docs/schema canonical alignment patch
-   - 이 branch에서 완료했다.
+   - 완료했다.
    - active DBML, documentation-only clean SQL, API contract, final spec은 current service policy 쪽으로 정렬되었다.
 
 2. backend boundary tests / entity-service alignment check
-   - current service policy는 title max 200과 content non-blank를 이미 enforce한다.
-   - 필요하면 API/service tests에 title/content boundary case를 보강한다.
+   - 완료했다.
+   - title max 200과 content non-blank boundary를 controller tests로 고정했다.
+   - entity/runtime migration shape는 `CanonicalEntityShapeTest`로 고정했다.
 
-3. optional Flyway migration
-   - 런타임 MySQL에서도 `adoption_posts.title` 길이 또는 `content` `NOT NULL`을 강제해야 한다면 새 migration을 추가한다.
-   - 이미 적용된 Flyway 파일은 수정하지 않는다.
+3. Flyway runtime alignment
+   - 완료했다.
+   - 이미 적용된 V1은 수정하지 않고, V2 migration으로 title/content 제약을 정렬했다.
 
 4. user profile blank string hardening
    - profile update blank string을 null로 정규화할지 거부할지 결정하고 Auth/User API tests를 추가한다.

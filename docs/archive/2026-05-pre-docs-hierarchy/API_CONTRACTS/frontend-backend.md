@@ -37,7 +37,7 @@ Profile response fields may include:
   "email": "user@example.com",
   "role": "USER",
   "display_name": "초코 보호자",
-  "contact_phone": "010-0000-0000",
+  "contact_phone": "01012341234",
   "region": "서울"
 }
 ```
@@ -60,7 +60,8 @@ Fields:
 - `birth_date`
 - `description`
 - `nose_image`
-- `profile_image`
+
+Archived note: active MVP no longer sends profile images to `POST /api/dogs/register`; profile upload moved to `POST /api/adoption-posts`.
 
 Normal response:
 

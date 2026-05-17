@@ -33,14 +33,18 @@ public class FileStorageService {
     }
 
     public StoredFile storeNoseImage(String dogId, MultipartFile file) {
-        return storeImage(dogId, "nose", file);
+        return storeImageAt("dogs/%s/nose".formatted(dogId), file);
     }
 
     public StoredFile storeProfileImage(String dogId, MultipartFile file) {
-        return storeImage(dogId, "profile", file);
+        return storeImageAt("dogs/%s/profile".formatted(dogId), file);
     }
 
-    private StoredFile storeImage(String dogId, String category, MultipartFile file) {
+    public StoredFile storeNoseVerificationImage(String verificationKey, MultipartFile file) {
+        return storeImageAt("nose-verifications/%s/nose".formatted(verificationKey), file);
+    }
+
+    private StoredFile storeImageAt(String relativeDirectory, MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_IMAGE", "이미지 파일이 비어 있습니다.");
         }
@@ -55,7 +59,7 @@ public class FileStorageService {
         String sanitizedBase = sanitizeBaseName(baseName);
         String candidateName = timestamp + "_" + sanitizedBase + "." + extension;
 
-        String relativePath = "dogs/%s/%s/%s".formatted(dogId, category, candidateName);
+        String relativePath = relativeDirectory + "/" + candidateName;
         Path absolutePath = resolveSafePath(relativePath);
         Path parentDir = absolutePath.getParent();
 
@@ -81,6 +85,27 @@ public class FileStorageService {
 
     public String toPublicUrl(String relativePath) {
         return "/files/" + relativePath;
+    }
+
+    public StoredFile readStoredImage(String relativePath, String mimeType, Long fileSize, String sha256) {
+        if (relativePath == null || relativePath.isBlank()) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_READ_FAILED", "저장된 이미지 경로가 없습니다.");
+        }
+        Path path = resolveSafePath(relativePath);
+        try {
+            byte[] bytes = Files.readAllBytes(path);
+            String filename = path.getFileName().toString();
+            return new StoredFile(
+                    uploadBasePath.relativize(path).toString().replace('\\', '/'),
+                    mimeType,
+                    fileSize == null ? (long) bytes.length : fileSize,
+                    sha256,
+                    filename,
+                    bytes
+            );
+        } catch (IOException e) {
+            throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "FILE_READ_FAILED", "저장된 이미지를 읽을 수 없습니다.");
+        }
     }
 
     private static String sanitizeOriginalFilename(String originalFilename) {

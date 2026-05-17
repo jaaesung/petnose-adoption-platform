@@ -9,7 +9,6 @@ public record DogRegisterRequest(
         String gender,
         String birthDate,
         String description,
-        MultipartFile noseImage,
-        MultipartFile profileImage
+        MultipartFile noseImage
 ) {
 }

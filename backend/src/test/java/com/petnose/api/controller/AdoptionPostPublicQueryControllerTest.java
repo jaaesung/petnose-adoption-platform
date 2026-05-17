@@ -121,7 +121,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listDefaultsToOpenAndExcludesDraftAndClosedPosts() throws Exception {
-        User author = saveUser("Happy Foster", "010-1234-5678", "Seoul");
+        User author = saveUser("Happy Foster", "01012345678", "Seoul");
         Dog dog = saveDog(author, "Choco");
         String profilePath = saveProfileImage(dog, "profile.jpg").getFilePath();
         saveVerificationLog(author, dog, VerificationResult.PENDING);
@@ -181,7 +181,7 @@ class AdoptionPostPublicQueryControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"OPEN", "RESERVED", "COMPLETED"})
     void listAllowsPublicStatuses(String statusValue) throws Exception {
-        User author = saveUser("Public Author", "010-2222-3333", "Busan");
+        User author = saveUser("Public Author", "01022223333", "Busan");
         Dog dog = saveDog(author, statusValue.toLowerCase() + "-dog");
         saveProfileImage(dog, "public-profile.jpg");
         saveVerificationLog(author, dog, VerificationResult.PASSED);
@@ -263,7 +263,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listOrdersLatestFirstByPublishedAtThenId() throws Exception {
-        User author = saveUser("Order Author", "010-1111-2222", "Seoul");
+        User author = saveUser("Order Author", "01011112222", "Seoul");
         Dog dog = saveDog(author, "OrderDog");
         saveVerificationLog(author, dog, VerificationResult.PASSED);
 
@@ -307,7 +307,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void detailReturnsPublicPostWithoutAuthorizationHeader() throws Exception {
-        User author = saveUser("Detail Author", "010-1234-5678", "Seoul");
+        User author = saveUser("Detail Author", "01012345678", "Seoul");
         Dog dog = saveDog(author, "Bori");
         String profilePath = saveProfileImage(dog, "detail-profile.jpg").getFilePath();
         saveVerificationLog(author, dog, VerificationResult.PENDING);
@@ -329,7 +329,7 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.profile_image_url").value("/files/" + profilePath))
                 .andExpect(jsonPath("$.verification_status").value("VERIFIED"))
                 .andExpect(jsonPath("$.author_display_name").value("Detail Author"))
-                .andExpect(jsonPath("$.author_contact_phone").value("010-1234-5678"))
+                .andExpect(jsonPath("$.author_contact_phone").value("01012345678"))
                 .andExpect(jsonPath("$.author_region").value("Seoul"))
                 .andExpect(jsonPath("$.published_at").isNotEmpty())
                 .andExpect(jsonPath("$.created_at").isNotEmpty())
@@ -343,7 +343,7 @@ class AdoptionPostPublicQueryControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"OPEN", "RESERVED", "COMPLETED"})
     void detailAllowsPublicStatuses(String statusValue) throws Exception {
-        User author = saveUser("Detail Status Author", "010-2323-4545", "Seoul");
+        User author = saveUser("Detail Status Author", "01023234545", "Seoul");
         Dog dog = saveDog(author, statusValue + "DetailDog");
         saveVerificationLog(author, dog, VerificationResult.PASSED);
         AdoptionPost post = savePost(author, dog, AdoptionPostStatus.valueOf(statusValue), statusValue + " detail post");
@@ -361,7 +361,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void detailMapsLatestFailureVerificationResultToFailed() throws Exception {
-        User author = saveUser("Failed Author", "010-3333-4444", "Incheon");
+        User author = saveUser("Failed Author", "01033334444", "Incheon");
         Dog dog = saveDog(author, "FailedDog");
         saveProfileImage(dog, "failed-profile.jpg");
         saveVerificationLog(author, dog, VerificationResult.PASSED);
@@ -379,7 +379,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void detailDefaultsMissingProfileAndVerificationLogToNullAndPending() throws Exception {
-        User author = saveUser("Pending Author", "010-5555-6666", "Jeju");
+        User author = saveUser("Pending Author", "01055556666", "Jeju");
         Dog dog = saveDog(author, "PendingDog");
         AdoptionPost post = savePost(author, dog, AdoptionPostStatus.OPEN, "Pending verification post");
 
@@ -395,7 +395,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listDoesNotDuplicateFilesPrefixForExistingFilesUrl() throws Exception {
-        User author = saveUser("Prefix Author", "010-7777-8888", "Gwangju");
+        User author = saveUser("Prefix Author", "01077778888", "Gwangju");
         Dog dog = saveDog(author, "PrefixDog");
         saveProfileImagePath(dog, "/files/dogs/%s/profile/existing-prefix.jpg".formatted(dog.getId()));
         saveVerificationLog(author, dog, VerificationResult.PASSED);
@@ -412,7 +412,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listNormalizesRelativeFilesPrefixWithoutDuplicatingFilesPrefix() throws Exception {
-        User author = saveUser("Relative Prefix Author", "010-1212-3434", "Gwangju");
+        User author = saveUser("Relative Prefix Author", "01012123434", "Gwangju");
         Dog dog = saveDog(author, "RelativePrefixDog");
         saveProfileImagePath(dog, "files/dogs/%s/profile/relative-prefix.jpg".formatted(dog.getId()));
         saveVerificationLog(author, dog, VerificationResult.PASSED);
@@ -429,7 +429,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listDefaultsMissingProfileAndVerificationLogToNullAndPending() throws Exception {
-        User author = saveUser("List Pending Author", "010-4545-6767", "Jeju");
+        User author = saveUser("List Pending Author", "01045456767", "Jeju");
         Dog dog = saveDog(author, "ListPendingDog");
         savePost(author, dog, AdoptionPostStatus.OPEN, "List pending post");
 
@@ -445,7 +445,7 @@ class AdoptionPostPublicQueryControllerTest {
 
     @Test
     void listSelectsLatestProfileImageDeterministically() throws Exception {
-        User author = saveUser("Image Author", "010-9999-0000", "Daejeon");
+        User author = saveUser("Image Author", "01099990000", "Daejeon");
         Dog dog = saveDog(author, "ImageDog");
         saveProfileImage(dog, "old-profile.jpg");
         saveProfileImage(dog, "latest-profile.jpg");
@@ -460,7 +460,7 @@ class AdoptionPostPublicQueryControllerTest {
     @ParameterizedTest
     @ValueSource(strings = {"DRAFT", "CLOSED"})
     void detailRejectsNonPublicPost(String statusValue) throws Exception {
-        User author = saveUser("Private Author", "010-0000-0000", "Daegu");
+        User author = saveUser("Private Author", "01012341234", "Daegu");
         Dog dog = saveDog(author, "PrivateDog");
         saveVerificationLog(author, dog, VerificationResult.PASSED);
         AdoptionPost post = savePost(author, dog, AdoptionPostStatus.valueOf(statusValue), statusValue + " post");

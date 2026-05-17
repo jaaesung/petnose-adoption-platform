@@ -22,7 +22,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -62,12 +61,9 @@ public class DogRegistrationService {
         LocalDate birthDate = parseBirthDate(request.birthDate());
 
         FileStorageService.StoredFile noseStored = fileStorageService.storeNoseImage(dogId, request.noseImage());
-        FileStorageService.StoredFile profileStored = optionalProfileImage(request.profileImage())
-                .map(file -> fileStorageService.storeProfileImage(dogId, file))
-                .orElse(null);
 
         PendingRegistration pending = transactionTemplate.execute(status ->
-                createPendingRows(user.getId(), dogId, request, birthDate, noseStored, profileStored)
+                createPendingRows(user.getId(), dogId, request, birthDate, noseStored)
         );
         if (pending == null) {
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "REGISTRATION_INIT_FAILED", "등록 초기화에 실패했습니다.");
@@ -83,7 +79,7 @@ public class DogRegistrationService {
             transactionTemplate.executeWithoutResult(status ->
                     markAsDuplicateSuspected(pending, embedResponse, decision)
             );
-            return buildDuplicateResponse(pending, embedResponse, decision, profileStored == null ? null : profileStored.relativePath());
+            return buildDuplicateResponse(pending, embedResponse, decision);
         }
 
         upsertToQdrantOrFail(pending, request, embedResponse, noseStored.relativePath());
@@ -95,8 +91,7 @@ public class DogRegistrationService {
                 pending,
                 embedResponse,
                 decision.maxScore(),
-                noseStored.relativePath(),
-                profileStored == null ? null : profileStored.relativePath()
+                noseStored.relativePath()
         );
     }
 
@@ -105,8 +100,7 @@ public class DogRegistrationService {
             String dogId,
             DogRegisterRequest request,
             LocalDate birthDate,
-            FileStorageService.StoredFile noseStored,
-            FileStorageService.StoredFile profileStored
+            FileStorageService.StoredFile noseStored
     ) {
         Dog dog = new Dog();
         dog.setId(dogId);
@@ -121,11 +115,6 @@ public class DogRegistrationService {
 
         DogImage noseImage = buildDogImage(dogId, DogImageType.NOSE, noseStored);
         dogImageRepository.save(noseImage);
-
-        if (profileStored != null) {
-            DogImage profileImage = buildDogImage(dogId, DogImageType.PROFILE, profileStored);
-            dogImageRepository.save(profileImage);
-        }
 
         VerificationLog verificationLog = new VerificationLog();
         verificationLog.setDogId(dogId);
@@ -304,8 +293,7 @@ public class DogRegistrationService {
             PendingRegistration pending,
             EmbedClient.EmbedResponse embedResponse,
             double maxScore,
-            String noseImageRelativePath,
-            String profileImageRelativePath
+            String noseImageRelativePath
     ) {
         VerificationResult result = VerificationResult.PASSED;
         return new DogRegisterResponse(
@@ -319,7 +307,7 @@ public class DogRegistrationService {
                 embedResponse.dimension(),
                 maxScore,
                 fileStorageService.toPublicUrl(noseImageRelativePath),
-                toPublicUrlOrNull(profileImageRelativePath),
+                null,
                 null,
                 "중복 의심 개체가 없어 등록이 완료되었습니다."
         );
@@ -328,8 +316,7 @@ public class DogRegistrationService {
     private DogRegisterResponse buildDuplicateResponse(
             PendingRegistration pending,
             EmbedClient.EmbedResponse embedResponse,
-            NoseVerificationPolicy.VerificationDecision decision,
-            String profileImageRelativePath
+            NoseVerificationPolicy.VerificationDecision decision
     ) {
         DuplicateCandidateResponse topMatch = null;
         if (decision.topMatch() != null) {
@@ -353,7 +340,7 @@ public class DogRegistrationService {
                 embedResponse.dimension(),
                 decision.maxScore(),
                 fileStorageService.toPublicUrl(getNoseImagePath(pending.noseImageId())),
-                toPublicUrlOrNull(profileImageRelativePath),
+                null,
                 topMatch,
                 "기존 등록견과 동일 개체로 의심되어 등록이 제한됩니다."
         );
@@ -376,10 +363,6 @@ public class DogRegistrationService {
             case EMBED_FAILED, QDRANT_SEARCH_FAILED -> "FAILED";
             case QDRANT_UPSERT_FAILED -> "QDRANT_SYNC_FAILED";
         };
-    }
-
-    private String toPublicUrlOrNull(String relativePath) {
-        return relativePath == null ? null : fileStorageService.toPublicUrl(relativePath);
     }
 
     private String getNoseImagePath(Long noseImageId) {
@@ -423,13 +406,6 @@ public class DogRegistrationService {
         } catch (DateTimeParseException e) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_BIRTH_DATE", "birth_date는 YYYY-MM-DD 형식이어야 합니다.");
         }
-    }
-
-    private java.util.Optional<MultipartFile> optionalProfileImage(MultipartFile profileImage) {
-        if (profileImage == null || profileImage.isEmpty()) {
-            return java.util.Optional.empty();
-        }
-        return java.util.Optional.of(profileImage);
     }
 
     private String blankToNull(String value) {

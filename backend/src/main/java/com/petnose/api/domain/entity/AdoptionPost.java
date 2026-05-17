@@ -32,7 +32,7 @@ public class AdoptionPost {
     private String content;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 32)
+    @Column(nullable = false, length = 20)
     private AdoptionPostStatus status = AdoptionPostStatus.DRAFT;
 
     @Column(name = "published_at")

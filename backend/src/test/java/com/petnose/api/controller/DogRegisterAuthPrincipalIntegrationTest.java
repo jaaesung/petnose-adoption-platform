@@ -44,6 +44,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
@@ -85,6 +86,11 @@ class DogRegisterAuthPrincipalIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        verificationLogRepository.deleteAll();
+        dogImageRepository.deleteAll();
+        dogRepository.deleteAll();
+        userRepository.deleteAll();
+        reset(embedClient, qdrantDogVectorClient);
         when(embedClient.embed(any(byte[].class), anyString(), anyString()))
                 .thenReturn(new EmbedClient.EmbedResponse(List.of(0.1, 0.2, 0.3), 128, "test-model"));
         when(qdrantDogVectorClient.search(anyList()))
@@ -417,7 +423,10 @@ class DogRegisterAuthPrincipalIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
                                 "email", email,
-                                "password", "password123"
+                                "password", "password123",
+                                "display_name", "DogOwner",
+                                "contact_phone", "01012341234",
+                                "region", "Seoul"
                         ))))
                 .andExpect(status().isCreated());
     }
