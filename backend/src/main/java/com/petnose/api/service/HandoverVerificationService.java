@@ -51,7 +51,11 @@ public class HandoverVerificationService {
         EmbedClient.EmbedResponse embedResponse = requestEmbeddingOrFail(postId, noseImage);
         validateEmbeddingDimensionOrFail(embedResponse);
 
-        List<QdrantSearchResult> searchResults = searchFromQdrantOrFail(postId, embedResponse);
+        List<QdrantSearchResult> searchResults = searchExpectedDogFromQdrantOrFail(
+                postId,
+                embedResponse,
+                expectedDog.getId()
+        );
         return evaluate(post.getId(), expectedDog.getId(), embedResponse, searchResults);
     }
 
@@ -105,9 +109,13 @@ public class HandoverVerificationService {
         }
     }
 
-    private List<QdrantSearchResult> searchFromQdrantOrFail(Long postId, EmbedClient.EmbedResponse embedResponse) {
+    private List<QdrantSearchResult> searchExpectedDogFromQdrantOrFail(
+            Long postId,
+            EmbedClient.EmbedResponse embedResponse,
+            String expectedDogId
+    ) {
         try {
-            return qdrantDogVectorClient.search(embedResponse.vector(), properties.effectiveTopK());
+            return qdrantDogVectorClient.searchExpectedDog(embedResponse.vector(), expectedDogId);
         } catch (QdrantDogVectorClient.QdrantClientException e) {
             log.warn("[HandoverVerification] qdrant search 실패: postId={}, status={}, message={}",
                     postId, e.getUpstreamStatus(), e.getMessage());
@@ -135,14 +143,16 @@ public class HandoverVerificationService {
         QdrantSearchResult topResult = searchResults.getFirst();
         boolean topMatchIsExpected = expectedDogId.equals(topResult.dogId());
         double score = topResult.score();
-        HandoverVerificationDecision decision;
-        if (topMatchIsExpected && score >= properties.getMatchThreshold()) {
-            decision = HandoverVerificationDecision.MATCHED;
-        } else if (topMatchIsExpected && score >= properties.getAmbiguousThreshold()) {
-            decision = HandoverVerificationDecision.AMBIGUOUS;
-        } else {
-            decision = HandoverVerificationDecision.NOT_MATCHED;
+        if (!topMatchIsExpected) {
+            log.warn(
+                    "[HandoverVerification] expected-dog filtered search returned a different dog: postId={}, expectedDogId={}",
+                    postId,
+                    expectedDogId
+            );
         }
+        HandoverVerificationDecision decision = topMatchIsExpected && score >= properties.getMatchThreshold()
+                ? HandoverVerificationDecision.MATCHED
+                : HandoverVerificationDecision.NOT_MATCHED;
 
         return response(postId, expectedDogId, decision, score, topMatchIsExpected, embedResponse);
     }

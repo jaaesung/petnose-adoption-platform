@@ -169,7 +169,8 @@ handover verification API는 dog registration과 의도적으로 다르다.
 - `POST /api/dogs/register`는 dog를 등록하고 adoption post creation 전에 duplicate suspicion detection을 수행한다.
 - `POST /api/adoption-posts/{post_id}/handover-verifications`는 dog를 등록하지 않는다.
 - 이 API는 새로 촬영한 nose image를 기존 adoption post에 연결된 dog와 비교한다.
-- expected dog는 `adoption_posts.dog_id`다.
+- expected dog는 `adoption_posts.dog_id`이며, 이 값은 `dogs.id` 및 Qdrant point id와 같다.
+- handover는 uploaded handover image embedding을 Qdrant에서 expected dog point/payload로만 제한해 직접 비교한다.
 - Spring Boot가 Python Embed와 Qdrant 호출을 오케스트레이션한다. Flutter는 Python Embed, Qdrant, MySQL을 직접 호출하지 않는다.
 
 MVP handover verification check는 stateless다.
@@ -185,9 +186,10 @@ MVP handover verification check는 stateless다.
 
 current MVP handover threshold policy는 dog registration duplicate threshold와 같은 Qdrant cosine score `0.70` 기준을 사용한다.
 
-- Qdrant top match가 expected dog이고 score가 `0.70` 이상이면 같은 dog로 보고 `MATCHED`를 반환한다.
-- Qdrant top match가 expected dog가 아니거나 score가 `0.70` 미만이면 `NOT_MATCHED`를 반환한다.
-- Qdrant result가 없으면 `NO_MATCH_CANDIDATE`를 반환한다.
+- Qdrant query는 `dog_id=adoption_posts.dog_id`인 expected dog candidate만 찾는다.
+- expected dog candidate가 반환되고 score가 `0.70` 이상이면 같은 dog로 보고 `matched=true`, `MATCHED`를 반환한다.
+- expected dog candidate가 반환되고 score가 `0.70` 미만이면 `matched=false`, `NOT_MATCHED`를 반환한다.
+- expected dog candidate가 없으면 `matched=false`, `NO_MATCH_CANDIDATE`를 반환한다.
 - handover `MATCHED`는 safety signal이며 adoption post를 자동 완료하지 않는다.
 
 이 기능은 reservation, payment, contract, Firebase, chat, push, report/admin, `SHELTER`, `ADOPTER` concept을 추가하지 않는다.
@@ -198,7 +200,7 @@ current MVP handover threshold policy는 dog registration duplicate threshold와
 
 Dog registration ownership은 JWT principal-only다. `dogs.owner_user_id`는 Bearer JWT로 resolve된 current active user에서 결정하며, public API contract는 request `user_id`를 ownership input으로 받지 않는다.
 
-current MVP dog registration duplicate threshold policy는 `0.70`이다. 이 값은 registration duplicate search에서 반환되는 Qdrant cosine score에 적용하며, duplicate 조건은 `score >= 0.70`이다. Qdrant candidate search threshold와 Spring duplicate decision threshold는 같은 score domain에 있으므로 함께 맞춘다. Handover verification은 별도 stateless flow이지만 MVP simplicity를 위해 same-dog threshold를 같은 Qdrant cosine score `0.70` 기준으로 맞춘다.
+current MVP dog registration duplicate threshold policy는 `0.70`이다. 이 값은 registration duplicate search에서 반환되는 Qdrant cosine score에 적용하며, duplicate 조건은 `score >= 0.70`이다. Qdrant candidate search threshold와 Spring duplicate decision threshold는 같은 score domain에 있으므로 함께 맞춘다. Handover verification은 별도 stateless flow이지만 MVP simplicity를 위해 same-dog threshold를 같은 Qdrant cosine score `0.70` 기준으로 맞춘다. 이 handover comparison strategy 변경은 registration duplicate gate behavior를 바꾸지 않는다.
 
 계산되는 response field:
 

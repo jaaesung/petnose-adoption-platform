@@ -54,17 +54,21 @@ public class QdrantDogVectorClient {
         return search(vector, limit, null);
     }
 
-    @SuppressWarnings("unchecked")
-    public List<QdrantSearchResult> search(List<Double> vector, int limit, Double scoreThreshold) {
-        Map<String, Object> filter = Map.of(
-                "must", List.of(
-                        Map.of(
-                                "key", "is_active",
-                                "match", Map.of("value", true)
-                        )
-                )
-        );
+    public List<QdrantSearchResult> searchExpectedDog(List<Double> vector, String expectedDogId) {
+        return search(vector, 1, null, expectedDogFilter(expectedDogId));
+    }
 
+    public List<QdrantSearchResult> search(List<Double> vector, int limit, Double scoreThreshold) {
+        return search(vector, limit, scoreThreshold, activeOnlyFilter());
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<QdrantSearchResult> search(
+            List<Double> vector,
+            int limit,
+            Double scoreThreshold,
+            Map<String, Object> filter
+    ) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("vector", vector);
         request.put("limit", Math.max(1, limit));
@@ -120,6 +124,24 @@ public class QdrantDogVectorClient {
             results.add(new QdrantSearchResult(pointId, dogId, score, breed, noseImagePath));
         }
         return results;
+    }
+
+    private Map<String, Object> activeOnlyFilter() {
+        return Map.of("must", List.of(matchCondition("is_active", true)));
+    }
+
+    private Map<String, Object> expectedDogFilter(String expectedDogId) {
+        return Map.of("must", List.of(
+                matchCondition("is_active", true),
+                matchCondition("dog_id", expectedDogId)
+        ));
+    }
+
+    private Map<String, Object> matchCondition(String key, Object value) {
+        return Map.of(
+                "key", key,
+                "match", Map.of("value", value)
+        );
     }
 
     public void upsert(String pointId, List<Double> vector, Map<String, Object> payload) {
