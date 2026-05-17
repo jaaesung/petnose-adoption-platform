@@ -12,8 +12,10 @@ import com.petnose.api.service.AuthService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 @RestController
 @RequestMapping("/api/adoption-posts")
@@ -48,12 +50,34 @@ public class AdoptionPostController {
         return adoptionPostService.findPublicPost(postId);
     }
 
-    @PostMapping
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<AdoptionPostCreateResponse> create(
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader,
-            @RequestBody AdoptionPostCreateRequest request
+            @RequestParam(value = "nose_verification_id", required = false) Long noseVerificationId,
+            @RequestParam(value = "dog_name", required = false) String dogName,
+            @RequestParam(value = "breed", required = false) String breed,
+            @RequestParam(value = "gender", required = false) String gender,
+            @RequestParam(value = "birth_date", required = false) String birthDate,
+            @RequestParam(value = "dog_description", required = false) String dogDescription,
+            @RequestParam(value = "description", required = false) String description,
+            @RequestParam(value = "title", required = false) String title,
+            @RequestParam(value = "content", required = false) String content,
+            @RequestParam(value = "status", required = false) String status,
+            @RequestParam(value = "profile_image", required = false) MultipartFile profileImage
     ) {
         Long currentUserId = authService.currentActiveUserId(authorizationHeader);
+        AdoptionPostCreateRequest request = new AdoptionPostCreateRequest(
+                noseVerificationId,
+                dogName,
+                breed,
+                gender,
+                birthDate,
+                dogDescription == null ? description : dogDescription,
+                title,
+                content,
+                status,
+                profileImage
+        );
         AdoptionPostCreateResponse response = adoptionPostService.create(currentUserId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }

@@ -64,7 +64,7 @@ class AuthUserApiIntegrationTest {
                                 "email", "Owner@Example.COM",
                                 "password", "password123",
                                 "display_name", "Bori Owner",
-                                "contact_phone", "010-0000-0000",
+                                "contact_phone", "01012341234",
                                 "region", "Seoul"
                         ))))
                 .andExpect(status().isCreated())
@@ -72,7 +72,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(jsonPath("$.email").value("owner@example.com"))
                 .andExpect(jsonPath("$.role").value("USER"))
                 .andExpect(jsonPath("$.display_name").value("Bori Owner"))
-                .andExpect(jsonPath("$.contact_phone").value("010-0000-0000"))
+                .andExpect(jsonPath("$.contact_phone").value("01012341234"))
                 .andExpect(jsonPath("$.region").value("Seoul"))
                 .andExpect(jsonPath("$.is_active").value(true));
 
@@ -85,7 +85,7 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void loginReturnsAccessTokenAndMeReturnsCurrentUser() throws Exception {
-        register("me@example.com", "password123", "Me User", "010-1111-2222", "Busan");
+        register("me@example.com", "password123", "Me User", "01011112222", "Busan");
 
         MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
@@ -101,7 +101,7 @@ class AuthUserApiIntegrationTest {
                 .andExpect(jsonPath("$.user.email").value("me@example.com"))
                 .andExpect(jsonPath("$.user.role").value("USER"))
                 .andExpect(jsonPath("$.user.display_name").value("Me User"))
-                .andExpect(jsonPath("$.user.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.user.contact_phone").value("01011112222"))
                 .andExpect(jsonPath("$.user.is_active").value(true))
                 .andReturn();
 
@@ -115,22 +115,25 @@ class AuthUserApiIntegrationTest {
                 .andExpect(jsonPath("$.email").value("me@example.com"))
                 .andExpect(jsonPath("$.role").value("USER"))
                 .andExpect(jsonPath("$.display_name").value("Me User"))
-                .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.contact_phone").value("01011112222"))
                 .andExpect(jsonPath("$.region").value("Busan"))
                 .andExpect(jsonPath("$.is_active").value(true));
     }
 
     @Test
-    void meKeepsNullableProfileFieldKeysForFlutterFlow() throws Exception {
-        register("me-null-profile@example.com", "password123", null, null, null);
-        String accessToken = loginAccessToken("me-null-profile@example.com", "password123");
+    void meReturnsRequiredProfileFieldKeysForFlutterFlow() throws Exception {
+        register("me-profile@example.com", "password123", "Profile User", "01012341234", "Seoul");
+        String accessToken = loginAccessToken("me-profile@example.com", "password123");
 
         MvcResult result = mockMvc.perform(get("/api/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.user_id").exists())
-                .andExpect(jsonPath("$.email").value("me-null-profile@example.com"))
+                .andExpect(jsonPath("$.email").value("me-profile@example.com"))
                 .andExpect(jsonPath("$.role").value("USER"))
+                .andExpect(jsonPath("$.display_name").value("Profile User"))
+                .andExpect(jsonPath("$.contact_phone").value("01012341234"))
+                .andExpect(jsonPath("$.region").value("Seoul"))
                 .andExpect(jsonPath("$.is_active").value(true))
                 .andExpect(jsonPath("$.created_at").doesNotExist())
                 .andReturn();
@@ -139,9 +142,6 @@ class AuthUserApiIntegrationTest {
         assertThat(body.fieldNames())
                 .toIterable()
                 .containsExactly("user_id", "email", "role", "display_name", "contact_phone", "region", "is_active");
-        assertThat(body.get("display_name").isNull()).isTrue();
-        assertThat(body.get("contact_phone").isNull()).isTrue();
-        assertThat(body.get("region").isNull()).isTrue();
     }
 
     @Test
@@ -181,13 +181,16 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void registerDuplicateEmailReturnsEmailAlreadyExists() throws Exception {
-        register("duplicate@example.com", "password123", "Duplicate", null, null);
+        register("duplicate@example.com", "password123", "Duplicate", "01012341234", "Seoul");
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
                                 "email", "duplicate@example.com",
-                                "password", "password123"
+                                "password", "password123",
+                                "display_name", "Duplicate",
+                                "contact_phone", "01012341234",
+                                "region", "Seoul"
                         ))))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.error_code").value("EMAIL_ALREADY_EXISTS"))
@@ -201,6 +204,9 @@ class AuthUserApiIntegrationTest {
                         .content(json(Map.of(
                                 "email", "role-ignore@example.com",
                                 "password", "password123",
+                                "display_name", "RoleIgnore",
+                                "contact_phone", "01012341234",
+                                "region", "Seoul",
                                 "role", "ADMIN"
                         ))))
                 .andExpect(status().isCreated())
@@ -254,42 +260,69 @@ class AuthUserApiIntegrationTest {
     }
 
     @Test
-    void registerAllowsOptionalProfileFieldsToBeOmitted() throws Exception {
+    void registerMissingDisplayNameReturnsValidationFailed() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
-                                "email", "optional@example.com",
-                                "password", "password123"
+                                "email", "missing-display@example.com",
+                                "password", "password123",
+                                "contact_phone", "01012341234",
+                                "region", "Seoul"
                         ))))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.role").value("USER"))
-                .andExpect(jsonPath("$.display_name").doesNotExist())
-                .andExpect(jsonPath("$.contact_phone").doesNotExist())
-                .andExpect(jsonPath("$.region").doesNotExist());
-
-        User saved = userRepository.findByEmail("optional@example.com").orElseThrow();
-        assertThat(saved.getDisplayName()).isNull();
-        assertThat(saved.getContactPhone()).isNull();
-        assertThat(saved.getRegion()).isNull();
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
     }
 
     @Test
-    void registerBlankOptionalProfileFieldsStillStoreNull() throws Exception {
+    void registerMissingContactPhoneReturnsValidationFailed() throws Exception {
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(Map.of(
-                                "email", "blank-profile-signup@example.com",
+                                "email", "missing-phone@example.com",
                                 "password", "password123",
-                                "display_name", "   ",
-                                "contact_phone", "   ",
-                                "region", "   "
+                                "display_name", "PhoneUser",
+                                "region", "Seoul"
                         ))))
-                .andExpect(status().isCreated());
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
+    }
 
-        User saved = userRepository.findByEmail("blank-profile-signup@example.com").orElseThrow();
-        assertThat(saved.getDisplayName()).isNull();
-        assertThat(saved.getContactPhone()).isNull();
-        assertThat(saved.getRegion()).isNull();
+    @Test
+    void registerRejectsInvalidContactPhoneFormats() throws Exception {
+        List<String> invalidPhones = List.of(
+                "010" + "-" + "1234" + "-" + "5678",
+                "01112345678",
+                "0101234567",
+                "010123456789"
+        );
+
+        for (String phone : invalidPhones) {
+            mockMvc.perform(post("/api/auth/register")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(json(Map.of(
+                                    "email", "invalid-phone-%d@example.com".formatted(phone.hashCode()),
+                                    "password", "password123",
+                                    "display_name", "PhoneUser",
+                                    "contact_phone", phone,
+                                    "region", "Seoul"
+                            ))))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
+        }
+    }
+
+    @Test
+    void registerMissingRegionReturnsValidationFailed() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(Map.of(
+                                "email", "missing-region@example.com",
+                                "password", "password123",
+                                "display_name", "RegionUser",
+                                "contact_phone", "01012341234"
+                        ))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
     }
 
     @Test
@@ -360,7 +393,7 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void profilePatchTrimsPersistsAndMeReflectsUpdatedProfile() throws Exception {
-        register("profile@example.com", "password123", "Old Name", "010-0000-0000", "Old Region");
+        register("profile@example.com", "password123", "Old Name", "01012341234", "Old Region");
         String accessToken = loginAccessToken("profile@example.com", "password123");
 
         MvcResult patchResult = mockMvc.perform(patch("/api/users/me/profile")
@@ -469,7 +502,7 @@ class AuthUserApiIntegrationTest {
         List<String> invalidContactPhones = List.of(
                 "0101234567",
                 "010123456789",
-                "010-1234-5678",
+                "010" + "-" + "1234" + "-" + "5678",
                 "010 1234 5678",
                 "+821012345678",
                 "(010)12345678",
@@ -531,7 +564,7 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void profilePatchPartialUpdateKeepsOmittedFields() throws Exception {
-        register("partial-profile@example.com", "password123", "Partial Name", "010-1111-2222", "Busan");
+        register("partial-profile@example.com", "password123", "Partial Name", "01011112222", "Busan");
         String accessToken = loginAccessToken("partial-profile@example.com", "password123");
 
         mockMvc.perform(patch("/api/users/me/profile")
@@ -540,7 +573,7 @@ class AuthUserApiIntegrationTest {
                         .content(json(Map.of("region", "Jeju"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.display_name").value("Partial Name"))
-                .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.contact_phone").value("01011112222"))
                 .andExpect(jsonPath("$.region").value("Jeju"));
 
         mockMvc.perform(patch("/api/users/me/profile")
@@ -549,7 +582,7 @@ class AuthUserApiIntegrationTest {
                         .content(json(Map.of("display_name", "SafeName"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.display_name").value("SafeName"))
-                .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.contact_phone").value("01011112222"))
                 .andExpect(jsonPath("$.region").value("Jeju"));
 
         mockMvc.perform(patch("/api/users/me/profile")
@@ -569,7 +602,7 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void profilePatchExplicitNullStoresNull() throws Exception {
-        register("null-profile@example.com", "password123", "Nullable Name", "010-1111-2222", "Daegu");
+        register("null-profile@example.com", "password123", "Nullable Name", "01011112222", "Daegu");
         String accessToken = loginAccessToken("null-profile@example.com", "password123");
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("display_name", null);
@@ -579,7 +612,7 @@ class AuthUserApiIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(body)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.contact_phone").value("010-1111-2222"))
+                .andExpect(jsonPath("$.contact_phone").value("01011112222"))
                 .andExpect(jsonPath("$.region").value("Daegu"))
                 .andReturn();
 
@@ -647,7 +680,7 @@ class AuthUserApiIntegrationTest {
 
     @Test
     void profilePatchIgnoresMassAssignmentFields() throws Exception {
-        register("mass-assignment@example.com", "password123", "OldName", "010-1111-2222", "Daegu");
+        register("mass-assignment@example.com", "password123", "OldName", "01011112222", "Daegu");
         String accessToken = loginAccessToken("mass-assignment@example.com", "password123");
         User before = userRepository.findByEmail("mass-assignment@example.com").orElseThrow();
         String originalPasswordHash = before.getPasswordHash();
@@ -683,15 +716,9 @@ class AuthUserApiIntegrationTest {
         Map<String, String> body = new LinkedHashMap<>();
         body.put("email", email);
         body.put("password", password);
-        if (displayName != null) {
-            body.put("display_name", displayName);
-        }
-        if (contactPhone != null) {
-            body.put("contact_phone", contactPhone);
-        }
-        if (region != null) {
-            body.put("region", region);
-        }
+        body.put("display_name", displayName == null ? "DefaultUser" : displayName);
+        body.put("contact_phone", contactPhone == null ? "01012341234" : contactPhone);
+        body.put("region", region == null ? "Seoul" : region);
 
         mockMvc.perform(post("/api/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)

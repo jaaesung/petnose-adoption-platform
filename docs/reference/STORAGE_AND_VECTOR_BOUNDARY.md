@@ -10,7 +10,7 @@
 
 | Layer | Role | Stored Data |
 |---|---|---|
-| MySQL | Source of truth | `users`, `dogs`, dog image metadata, verification history, adoption posts |
+| MySQL | Source of truth | `users`, `dogs`, dog image metadata, verification history, nose verification attempts, adoption posts |
 | Qdrant | Vector search index | dog nose embedding vector와 minimal search payload |
 | File storage | Binary object storage | uploaded nose/profile image |
 
@@ -24,13 +24,14 @@
 
 ## MySQL Table Scope
 
-active MVP table set은 정확히 아래 5개다.
+active MVP table set은 정확히 아래 6개다.
 
 1. `users`
 2. `dogs`
 3. `dog_images`
 4. `verification_logs`
-5. `adoption_posts`
+5. `nose_verification_attempts`
+6. `adoption_posts`
 
 `publisher_profiles`, `shelter_profiles`, `seller_profiles`, `auth_logs`, `reports`, `refresh_tokens`, `handover_verifications`는 active MVP table이 아니다.
 
@@ -45,8 +46,9 @@ Real model target:
 
 Qdrant point id는 MySQL column으로 저장하지 않는다. API response에서는 아래처럼 계산한다.
 
-- normal registration: `qdrant_point_id = dog_id`
-- duplicate suspected registration: `qdrant_point_id = null`
+- adoption post creation after passed pre-post verification: `qdrant_point_id = dog_id`
+- normal compatibility registration: `qdrant_point_id = dog_id`
+- duplicate suspected pre-post verification / compatibility registration: `qdrant_point_id = null`
 
 ## Image Storage Policy
 
@@ -54,13 +56,15 @@ Qdrant point id는 MySQL column으로 저장하지 않는다. API response에서
 - `dog_images.file_path`는 upload root 아래 상대 경로를 저장한다.
 - public file URL은 `/files/{relative_path}` 형태를 사용한다.
 - API display용 authoritative image URL은 MySQL `dog_images.file_path`에서 계산한다.
+- pre-post `nose_image`는 `nose_verification_attempts.nose_image_path`로 저장된다. adoption post creation 성공 시 해당 path가 생성된 dog의 `NOSE` image row로 연결된다.
+- adoption post `profile_image`는 post 생성 단계에서 필수로 받아 `PROFILE` image row로 저장한다.
 - Qdrant payload에 internal search metadata가 있더라도 public/user-facing response에 Qdrant payload details를 노출하지 않는다.
 
 ## Verification Modeling Policy
 
-`verification_logs`는 nose verification attempt의 source of truth다.
+`verification_logs`는 비문 검증 결과 이력의 source of truth다. `nose_verification_attempts`는 adoption post creation에 사용할 one-time verification token 역할을 한다.
 
-`dogs.status`는 lifecycle/service state만 유지한다. `DUPLICATE_SUSPECTED`는 adoption post creation을 막아야 하므로 `dogs.status`에 남긴다.
+`dogs.status`는 lifecycle/service state만 유지한다. 신규 pre-post verification의 `DUPLICATE_SUSPECTED`는 dog를 생성하지 않고 attempt result에 남긴다. deprecated compatibility registration은 기존 응답/조회 호환을 위해 duplicate dog status를 계속 사용할 수 있다.
 
 detailed verification data는 `verification_logs`에 속한다.
 

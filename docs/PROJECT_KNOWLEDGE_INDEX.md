@@ -53,11 +53,12 @@
 - 활성 role은 `USER` / `ADMIN`만 사용한다.
 - `SHELTER` / `ADOPTER`는 active role이 아니다.
 - `publisher_profiles`, `shelter_profiles`, `seller_profiles`, `auth_logs`, `reports`, `refresh_tokens`는 active MVP에 없다.
-- 활성 domain table은 아래 5개다.
+- 활성 domain table은 아래 6개다.
   - `users`
   - `dogs`
   - `dog_images`
   - `verification_logs`
+  - `nose_verification_attempts`
   - `adoption_posts`
 - `users`가 `display_name`, `contact_phone`, `region`, `is_active`를 직접 가진다.
 - MySQL이 source of truth다.
@@ -84,6 +85,7 @@
 - `POST /api/auth/login`
 - `GET /api/users/me`
 - `PATCH /api/users/me/profile`
+- `POST /api/nose-verifications`
 - `POST /api/dogs/register`
 - `GET /api/dogs/me`
 - `GET /api/dogs/{dog_id}`
@@ -96,10 +98,13 @@
 
 상세 request/response, error code, visibility rule은 `docs/PETNOSE_MVP_API_CONTRACT.md`가 기준이다.
 
-Dog registration ownership은 JWT-principal-only다.
+Pre-post nose verification과 dog registration ownership은 JWT-principal-only다.
 
 - request `user_id`는 active API contract input이 아니다.
-- dog registration ownership은 adoption post creation ownership과 같은 JWT principal model을 따른다.
+- 신규 Flutter 분양글 작성 flow는 `POST /api/nose-verifications`에서 `nose_image`만 검증하고, 반환된 `nose_verification_id`를 `POST /api/adoption-posts`에 전달한다.
+- 신규 Flutter 분양글 작성 flow에서 dog 기본 정보와 required `profile_image`는 `POST /api/adoption-posts`에 보낸다.
+- `POST /api/dogs/register`는 deprecated compatibility endpoint로 유지된다.
+- adoption post creation은 JWT principal과 `nose_verification_id` owner를 함께 검증한다.
 
 Dog Query API는 current `develop`에 구현되어 있다.
 

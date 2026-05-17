@@ -3,7 +3,7 @@
 ## 역할
 
 플랫폼의 메인 오케스트레이터입니다.  
-사용자 인증/인가, 강아지 등록, 비문 인증, 입양 게시글 관리 등 모든 비즈니스 로직을 처리합니다.  
+사용자 인증/인가, 분양 전 비문 검증, 호환 강아지 등록, 입양 게시글 관리 등 모든 비즈니스 로직을 처리합니다.
 MySQL, Qdrant, Python Embed 서비스와 통신합니다.
 
 시스템 구조는 [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md)를 참고하세요.
@@ -27,11 +27,11 @@ MySQL, Qdrant, Python Embed 서비스와 통신합니다.
 |---|---|
 | 기동 및 actuator health | 구현됨 |
 | MySQL 연결 | 구현됨 (Flyway 마이그레이션, JPA ddl-auto: none) |
-| DB 마이그레이션 | Flyway 활성화 — `db/migration/V1__baseline.sql` (초기 7개 테이블) |
+| DB 마이그레이션 | Flyway 활성화 — `V1__baseline.sql`, `V2__align_adoption_post_content_constraints.sql`, `V3__add_nose_verification_attempts.sql` |
 | Python embed 클라이언트 | 구현됨 (`EmbedClient`) |
 | Qdrant 컬렉션 초기화 | 구현됨 (`QdrantInitializer`) |
 | Dev 테스트 엔드포인트 | 구현됨 (`/api/dev/*`, **dev profile 전용**) |
-| 도메인 비즈니스 로직 | 추후 구현 예정 |
+| 도메인 비즈니스 로직 | 구현됨 (auth, nose verification, dog registration/query compatibility, adoption post, handover verification) |
 
 ---
 
@@ -109,7 +109,7 @@ gradle test --no-daemon --stacktrace
 
 - `/api/dev/*`는 개발 진단용이며 제품 기능 계약에 포함하지 않습니다.
 - DB source of truth는 MySQL입니다. Qdrant는 검색 보조 데이터로 취급합니다.
-- API/DB 스키마 변경 시 `docs/API_CONTRACTS/*`, `docs/TABLE_DRAFT.md` 동기화 후 PR 생성합니다.
+- API/DB 스키마 변경 시 `docs/PETNOSE_MVP_API_CONTRACT.md`, `docs/PETNOSE_MVP_FINAL_PROJECT_SPEC.md`, `docs/db/*`를 함께 동기화합니다.
 
 ## 파일 저장 경로
 

@@ -62,7 +62,7 @@ class DogRegistrationControllerTest {
                         2048,
                         0.12345,
                         "/files/dogs/dog-1/nose/sample.png",
-                        "/files/dogs/dog-1/profile/sample.png",
+                        null,
                         null,
                         "registered"
                 ));
@@ -79,7 +79,7 @@ class DogRegistrationControllerTest {
                 .andExpect(jsonPath("$.dimension").value(2048))
                 .andExpect(jsonPath("$.max_similarity_score").value(0.12345))
                 .andExpect(jsonPath("$.nose_image_url").value("/files/dogs/dog-1/nose/sample.png"))
-                .andExpect(jsonPath("$.profile_image_url").value("/files/dogs/dog-1/profile/sample.png"))
+                .andExpect(jsonPath("$.profile_image_url").value(nullValue()))
                 .andExpect(jsonPath("$.top_match").doesNotExist())
                 .andExpect(jsonPath("$.message").value("registered"))
                 .andExpect(jsonPath("$.dogId").doesNotExist())

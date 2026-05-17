@@ -2,7 +2,10 @@ package com.petnose.api.domain.entity;
 
 import com.petnose.api.domain.enums.DogImageType;
 import com.petnose.api.domain.enums.DogStatus;
+import com.petnose.api.domain.enums.NoseVerificationStatus;
 import jakarta.persistence.Column;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
@@ -77,6 +80,76 @@ class CanonicalEntityShapeTest {
                 DogStatus.INACTIVE
         );
         assertThat(DogImageType.values()).containsExactly(DogImageType.NOSE, DogImageType.PROFILE);
+    }
+
+    @Test
+    void adoptionPostEntityAndRuntimeMigrationAlignWithCreatePolicy() throws Exception {
+        Column title = AdoptionPost.class.getDeclaredField("title").getAnnotation(Column.class);
+        Column content = AdoptionPost.class.getDeclaredField("content").getAnnotation(Column.class);
+        Column status = AdoptionPost.class.getDeclaredField("status").getAnnotation(Column.class);
+
+        assertThat(title.length()).isEqualTo(200);
+        assertThat(title.nullable()).isFalse();
+        assertThat(content.nullable()).isFalse();
+        assertThat(status.length()).isEqualTo(20);
+        assertThat(status.nullable()).isFalse();
+
+        String migration = resourceText("db/migration/V2__align_adoption_post_content_constraints.sql");
+        assertThat(migration).contains(
+                "MODIFY title VARCHAR(200) NOT NULL",
+                "MODIFY content TEXT NOT NULL"
+        );
+    }
+
+    @Test
+    void noseVerificationAttemptEntityAndMigrationAlignWithAdoptionPostFlow() throws Exception {
+        Set<String> fields = declaredFieldNames(NoseVerificationAttempt.class);
+        Column requestedByUserId = NoseVerificationAttempt.class.getDeclaredField("requestedByUserId").getAnnotation(Column.class);
+        Column noseImagePath = NoseVerificationAttempt.class.getDeclaredField("noseImagePath").getAnnotation(Column.class);
+        Column consumedAt = NoseVerificationAttempt.class.getDeclaredField("consumedAt").getAnnotation(Column.class);
+        Enumerated result = NoseVerificationAttempt.class.getDeclaredField("result").getAnnotation(Enumerated.class);
+
+        assertThat(fields).contains(
+                "id",
+                "requestedByUserId",
+                "noseImagePath",
+                "noseImageMimeType",
+                "noseImageFileSize",
+                "noseImageSha256",
+                "result",
+                "similarityScore",
+                "candidateDogId",
+                "model",
+                "dimension",
+                "failureReason",
+                "expiresAt",
+                "consumedAt",
+                "consumedByPostId",
+                "createdAt"
+        );
+        assertThat(requestedByUserId.nullable()).isFalse();
+        assertThat(noseImagePath.length()).isEqualTo(500);
+        assertThat(noseImagePath.nullable()).isFalse();
+        assertThat(consumedAt.nullable()).isTrue();
+        assertThat(result.value()).isEqualTo(EnumType.STRING);
+        assertThat(NoseVerificationStatus.values()).containsExactly(
+                NoseVerificationStatus.PENDING,
+                NoseVerificationStatus.VERIFIED,
+                NoseVerificationStatus.DUPLICATE_SUSPECTED,
+                NoseVerificationStatus.FAILED
+        );
+
+        String migration = resourceText("db/migration/V3__add_nose_verification_attempts.sql");
+        assertThat(migration).contains(
+                "CREATE TABLE nose_verification_attempts",
+                "requested_by_user_id BIGINT NOT NULL",
+                "nose_image_path VARCHAR(500) NOT NULL",
+                "result VARCHAR(40) NOT NULL",
+                "expires_at TIMESTAMP NOT NULL",
+                "consumed_at TIMESTAMP NULL",
+                "consumed_by_post_id BIGINT NULL",
+                "CHECK (result IN ('PENDING', 'PASSED', 'DUPLICATE_SUSPECTED', 'EMBED_FAILED', 'QDRANT_SEARCH_FAILED', 'QDRANT_UPSERT_FAILED'))"
+        );
     }
 
     @Test

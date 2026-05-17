@@ -27,12 +27,11 @@ public class DogRegistrationController {
             @RequestParam(value = "gender", required = false) String gender,
             @RequestParam(value = "birth_date", required = false) String birthDate,
             @RequestParam(value = "description", required = false) String description,
-            @RequestParam(value = "nose_image", required = false) MultipartFile noseImage,
-            @RequestParam(value = "profile_image", required = false) MultipartFile profileImage
+            @RequestParam(value = "nose_image", required = false) MultipartFile noseImage
     ) {
         Long ownerUserId = authService.currentActiveUserId(authorization);
         DogRegisterResponse response = dogRegistrationService.register(
-                new DogRegisterRequest(ownerUserId, name, breed, gender, birthDate, description, noseImage, profileImage)
+                new DogRegisterRequest(ownerUserId, name, breed, gender, birthDate, description, noseImage)
         );
 
         if (response.registrationAllowed()) {

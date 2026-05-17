@@ -46,7 +46,7 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 
 - **메인 오케스트레이터.** 모든 비즈니스 로직을 여기서 처리합니다.
 - 사용자 인증/인가 (JWT)
-- 강아지 등록, 입양 게시글 관리, 인도 시점 비문 확인
+- 분양 전 비문 검증, 호환 강아지 등록, 입양 게시글 관리, 인도 시점 비문 확인
 - MySQL 읽기/쓰기
 - Python 임베딩 서비스 호출 및 Qdrant 벡터 저장/검색 호출
 - 이미지 업로드 처리 (`uploads/` 볼륨)
@@ -68,7 +68,7 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 ### MySQL
 
 - **관계형 데이터의 Source of Truth.**
-- `users`, `dogs`, `dog_images`, `verification_logs`, `adoption_posts` 데이터를 보관합니다.
+- `users`, `dogs`, `dog_images`, `verification_logs`, `nose_verification_attempts`, `adoption_posts` 데이터를 보관합니다.
 
 ### Nginx
 
@@ -83,16 +83,20 @@ Spring Boot, Python, MySQL, Qdrant는 Docker 내부 네트워크에서만 통신
 
 ## 주요 흐름
 
-### 강아지 비문 등록
+### 분양 전 비문 검증과 분양글 생성
 
 ```
-Flutter → POST /api/dogs/register (이미지 포함)
+Flutter → POST /api/nose-verifications (nose 이미지 포함)
   → Spring Boot: 이미지 저장 (uploads 볼륨, 상대경로 DB 기록)
   → Spring Boot → Python Embed: POST /embed (이미지 바이트)
   ← Python Embed: { "vector": [...] }
+  → Spring Boot → Qdrant: duplicate search only
+  → Spring Boot → MySQL: INSERT INTO nose_verification_attempts
+  ← Spring Boot → Flutter: { "nose_verification_id": 1001, "allowed": true, "decision": "PASSED", ... }
+Flutter → POST /api/adoption-posts (nose_verification_id, dog 기본 정보, required profile_image)
+  → Spring Boot → MySQL: INSERT INTO dogs, dog_images(NOSE / PROFILE), verification_logs, adoption_posts; consume attempt
   → Spring Boot → Qdrant: point id = dogs.id 로 vector upsert
-  → Spring Boot → MySQL: INSERT INTO dogs, dog_images (file_path = 상대경로)
-  ← Spring Boot → Flutter: { "dog_id": "...", "nose_image_url": "/files/dogs/.../nose/..." }
+  ← Spring Boot → Flutter: { "post_id": 501, "dog_id": "...", ... }
 ```
 
 저장 경로 규칙 및 URL 형식: [FILE_STORAGE_AND_URL_POLICY.md](FILE_STORAGE_AND_URL_POLICY.md)

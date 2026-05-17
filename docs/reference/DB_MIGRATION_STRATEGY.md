@@ -29,6 +29,15 @@ Flyway는 backend runtime의 database schema history를 관리한다. active pro
 backend/src/main/resources/db/migration/
 ```
 
+Current runtime migrations:
+
+- `V1__baseline.sql`: simplified MVP baseline tables.
+- `V2__align_adoption_post_content_constraints.sql`: aligns `adoption_posts.title` with the 200-character API policy and makes `adoption_posts.content` `NOT NULL`.
+- `V3__add_nose_verification_attempts.sql`: adds one-time pre-post nose verification attempts used by multipart adoption post creation.
+
+V2 assumes existing `adoption_posts` rows were created through the current API/service policy. If a manually inserted legacy row has a title longer than 200 characters or null content, clean that data before applying V2.
+V3 assumes the baseline `users`, `dogs`, `dog_images`, `verification_logs`, and `adoption_posts` tables already exist.
+
 Naming:
 
 ```text
@@ -38,8 +47,8 @@ V{version}__{description}.sql
 Examples:
 
 ```text
-V4__align_users_profile_fields.sql
-V5__move_registration_snapshot_to_verification_logs.sql
+V4__expire_stale_nose_verification_attempts.sql
+V5__add_post_creation_audit.sql
 ```
 
 ## Environment Policy

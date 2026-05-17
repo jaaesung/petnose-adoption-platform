@@ -33,7 +33,7 @@ public class AuthService {
     private static final int MAX_REGION_LENGTH = 100;
     private static final int MAX_PROFILE_REGION_LENGTH = 100;
     private static final Pattern PROFILE_DISPLAY_NAME_PATTERN = Pattern.compile("^[가-힣A-Za-z0-9]{2,10}$");
-    private static final Pattern PROFILE_CONTACT_PHONE_PATTERN = Pattern.compile("^[0-9]{11}$");
+    private static final Pattern PROFILE_CONTACT_PHONE_PATTERN = Pattern.compile("^010[0-9]{8}$");
 
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
@@ -50,13 +50,20 @@ public class AuthService {
             throw new ApiException(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "이미 가입된 email 입니다.");
         }
 
+        String displayName = required(request.displayName(), "display_name");
+        String contactPhone = required(request.contactPhone(), "contact_phone");
+        String region = required(request.region(), "region");
+        validateDisplayName(displayName);
+        validateContactPhone(contactPhone);
+        validateRegion(region, MAX_REGION_LENGTH);
+
         User user = new User();
         user.setEmail(email);
         user.setPasswordHash(passwordEncoder.encode(password));
         user.setRole(UserRole.USER);
-        user.setDisplayName(optional(request.displayName(), MAX_DISPLAY_NAME_LENGTH, "display_name"));
-        user.setContactPhone(optional(request.contactPhone(), MAX_CONTACT_PHONE_LENGTH, "contact_phone"));
-        user.setRegion(optional(request.region(), MAX_REGION_LENGTH, "region"));
+        user.setDisplayName(displayName);
+        user.setContactPhone(contactPhone);
+        user.setRegion(region);
         user.setActive(true);
 
         try {
@@ -192,7 +199,7 @@ public class AuthService {
     private String validationMessage(String field) {
         return switch (field) {
             case "display_name" -> "display_name은 공백 없이 한글, 영문, 숫자만 사용해 2자 이상 10자 이하여야 합니다.";
-            case "contact_phone" -> "contact_phone은 하이픈 없이 숫자 11자리여야 합니다.";
+            case "contact_phone" -> "contact_phone은 010으로 시작하는 하이픈 없는 숫자 11자리여야 합니다.";
             case "region" -> "region은 공백만 사용할 수 없고 100자 이하여야 합니다.";
             default -> "입력값 검증에 실패했습니다.";
         };
@@ -240,6 +247,27 @@ public class AuthService {
             throw badRequest(fieldName + "은 " + maxLength + "자 이하여야 합니다.");
         }
         return trimmed;
+    }
+
+    private void validateDisplayName(String displayName) {
+        if (displayName.length() > MAX_DISPLAY_NAME_LENGTH) {
+            throw badRequest("display_name은 " + MAX_DISPLAY_NAME_LENGTH + "자 이하여야 합니다.");
+        }
+    }
+
+    private void validateContactPhone(String contactPhone) {
+        if (contactPhone.length() > MAX_CONTACT_PHONE_LENGTH) {
+            throw badRequest("contact_phone은 " + MAX_CONTACT_PHONE_LENGTH + "자 이하여야 합니다.");
+        }
+        if (!PROFILE_CONTACT_PHONE_PATTERN.matcher(contactPhone).matches()) {
+            throw badRequest("contact_phone은 010으로 시작하는 하이픈 없는 숫자 11자리여야 합니다.");
+        }
+    }
+
+    private void validateRegion(String region, int maxLength) {
+        if (region.length() > maxLength) {
+            throw badRequest("region은 " + maxLength + "자 이하여야 합니다.");
+        }
     }
 
     private ApiException invalidCredentials() {

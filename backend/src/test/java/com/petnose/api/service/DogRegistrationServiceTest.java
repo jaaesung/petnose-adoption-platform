@@ -128,8 +128,6 @@ class DogRegistrationServiceTest {
 
         when(fileStorageService.storeNoseImage(anyString(), any()))
                 .thenReturn(storedFile("dogs/dog-1/nose/nose.jpg"));
-        lenient().when(fileStorageService.storeProfileImage(anyString(), any()))
-                .thenReturn(storedFile("dogs/dog-1/profile/profile.jpg"));
         when(fileStorageService.toPublicUrl(anyString())).thenAnswer(invocation -> "/files/" + invocation.getArgument(0));
     }
 
@@ -141,7 +139,7 @@ class DogRegistrationServiceTest {
         when(qdrantDogVectorClient.search(vector))
                 .thenReturn(List.of(new QdrantSearchResult("other-point", "other-dog", 0.12345, "Jindo", "dogs/other/nose.jpg")));
 
-        DogRegisterResponse response = service.register(requestWithProfile());
+        DogRegisterResponse response = service.register(request());
 
         Dog dog = dogs.get(response.dogId());
         VerificationLog log = onlyVerificationLog();
@@ -158,7 +156,7 @@ class DogRegistrationServiceTest {
         assertThat(response.verificationStatus()).isEqualTo("VERIFIED");
         assertThat(response.embeddingStatus()).isEqualTo("COMPLETED");
         assertThat(response.qdrantPointId()).isEqualTo(response.dogId());
-        assertThat(response.profileImageUrl()).isEqualTo("/files/dogs/dog-1/profile/profile.jpg");
+        assertThat(response.profileImageUrl()).isNull();
 
         verify(qdrantDogVectorClient).upsert(eq(response.dogId()), eq(vector), anyMap());
     }
@@ -171,7 +169,7 @@ class DogRegistrationServiceTest {
         when(qdrantDogVectorClient.search(vector))
                 .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.98765, "Maltese", "dogs/candidate/nose.jpg")));
 
-        DogRegisterResponse response = service.register(requestWithoutProfile());
+        DogRegisterResponse response = service.register(request());
 
         Dog dog = dogs.get(response.dogId());
         VerificationLog log = onlyVerificationLog();
@@ -204,7 +202,7 @@ class DogRegistrationServiceTest {
         when(qdrantDogVectorClient.search(vector))
                 .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.70, "Maltese", "dogs/candidate/nose.jpg")));
 
-        DogRegisterResponse response = service.register(requestWithoutProfile());
+        DogRegisterResponse response = service.register(request());
 
         assertThat(response.registrationAllowed()).isFalse();
         assertThat(response.status()).isEqualTo("DUPLICATE_SUSPECTED");
@@ -225,7 +223,7 @@ class DogRegistrationServiceTest {
         when(qdrantDogVectorClient.search(vector))
                 .thenReturn(List.of(new QdrantSearchResult("candidate-point", "candidate-dog", 0.69999, "Maltese", "dogs/candidate/nose.jpg")));
 
-        DogRegisterResponse response = service.register(requestWithoutProfile());
+        DogRegisterResponse response = service.register(request());
 
         assertThat(response.registrationAllowed()).isTrue();
         assertThat(response.status()).isEqualTo("REGISTERED");
@@ -243,7 +241,7 @@ class DogRegistrationServiceTest {
         return verificationLogs.values().iterator().next();
     }
 
-    private DogRegisterRequest requestWithProfile() {
+    private DogRegisterRequest request() {
         return new DogRegisterRequest(
                 1L,
                 "Bori",
@@ -251,21 +249,7 @@ class DogRegistrationServiceTest {
                 "MALE",
                 "2024-01-01",
                 "friendly",
-                multipart("nose_image", "nose.jpg"),
-                multipart("profile_image", "profile.jpg")
-        );
-    }
-
-    private DogRegisterRequest requestWithoutProfile() {
-        return new DogRegisterRequest(
-                1L,
-                "Bori",
-                "Jindo",
-                "MALE",
-                "2024-01-01",
-                "friendly",
-                multipart("nose_image", "nose.jpg"),
-                null
+                multipart("nose_image", "nose.jpg")
         );
     }
 

@@ -694,7 +694,7 @@ class HandoverVerificationControllerTest {
         user.setPasswordHash("hash");
         user.setRole(UserRole.USER);
         user.setDisplayName("Handover User");
-        user.setContactPhone("010-0000-0000");
+        user.setContactPhone("01012341234");
         user.setRegion("Seoul");
         user.setActive(active);
         return userRepository.saveAndFlush(user);
