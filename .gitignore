@@ -12,6 +12,13 @@ Thumbs.db
 !.env.example
 infra/docker/.env
 
+# ── Firebase service account secrets (절대 커밋 금지) ───────────────────────
+infra/secrets/
+infra/docker/secrets/
+firebase-service-account*.json
+*-firebase-adminsdk-*.json
+serviceAccountKey*.json
+
 # ── 빌드 산출물 ──────────────────────────────────────────────────────────────
 build/
 dist/
