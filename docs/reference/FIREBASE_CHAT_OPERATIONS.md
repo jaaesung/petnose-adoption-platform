@@ -127,6 +127,10 @@ Use the template only with sanitized status codes, ids, aliases, and PASS/FAIL e
 - Credentials are not stored in the repository.
 - Rollback: remove `infra/docker/compose.firebase.yaml` from the compose invocation or disable Firebase with `FIREBASE_ENABLED=false`.
 
+## Release Readiness Evidence
+
+- Release readiness evidence: `docs/ops-evidence/firebase-chat-release-readiness.md`
+
 ## Preparing Smoke Fixtures
 
 Use `scripts/prepare-firebase-chat-smoke-fixture.ps1` to create the runtime data required by enabled-mode Firebase chat smoke testing.
