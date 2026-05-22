@@ -525,6 +525,26 @@ Remaining gaps:
 - Flutter realtime listener app-side verification.
 - Real device push delivery validation.
 
+## P0-8 Release Readiness Audit
+
+This phase adds the release readiness audit for deciding whether `develop` can be promoted to `main` with Firebase chat as an optional backend feature.
+
+Implemented behavior:
+
+- P0-8 Release readiness audit added.
+- Backend/API readiness PASS.
+- Product readiness remains PARTIAL until Flutter listener and real device push delivery are verified.
+
+Explicit non-goals for this PR:
+
+- No DB schema changes or migrations.
+- No Java backend logic changes.
+- No Docker runtime file changes.
+- No Firestore rules changes.
+- No Flutter changes.
+- No Python Embed changes.
+- No reservation, payment, contract, report, or admin scope is added.
+
 ## Proposed Firestore Room Fields
 
 Every `chat_rooms/{room_id}` document should contain:
