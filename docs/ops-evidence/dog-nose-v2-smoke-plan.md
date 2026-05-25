@@ -56,6 +56,8 @@ Dev reset 후보:
 
 `infra/docker/.env.example`을 참고해 repository 밖 또는 local-only `.env`를 준비한다. Secret, service account JSON path, 모델 weight 파일은 git에 추가하지 않는다.
 
+`infra/docker/.env.example`의 active 기본값은 dev/CI mock compose가 바로 뜨도록 `mock-v1`, `dog_nose_embeddings`, 128차원을 유지한다. Dog nose v2 real-model runtime 값은 `compose.real-model.yaml`이 강제하므로 실제 v2 smoke에서는 반드시 아래처럼 real-model override를 함께 포함한다.
+
 ```bash
 docker compose --env-file infra/docker/.env \
   -f infra/docker/compose.yaml \
