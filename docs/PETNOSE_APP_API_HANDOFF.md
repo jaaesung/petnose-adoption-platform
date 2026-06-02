@@ -15,7 +15,7 @@
 9. 공개 분양글 생성 완료
 10. 인도 시점 비문 확인: `POST /api/adoption-posts/{post_id}/handover-verifications`
 11. `matched=true`이면 완료 버튼 활성화
-12. 완료 처리: `PATCH /api/adoption-posts/{post_id}/status` with `COMPLETED`
+12. 완료 처리: `PATCH /api/adoption-posts/{post_id}/status` with `COMPLETED` and `adopter_user_id`
 
 ## App-Requested Follow-up Flow
 
@@ -33,7 +33,7 @@
 10. 앱은 비밀번호나 `password_hash`를 조회하려고 하지 않는다.
 11. 분양글 카드와 상세 화면은 response의 `liked` field를 사용하고, 좋아요 추가 `PUT /api/adoption-posts/{post_id}/like`, 좋아요 취소 `DELETE /api/adoption-posts/{post_id}/like`, 내 좋아요 목록 `GET /api/adoption-posts/liked/me`를 사용한다.
 12. 앱은 `users.liked` map을 기대하지 않는다. 서버는 `adoption_post_likes` 관계 테이블 기준으로 좋아요 상태를 계산한다.
-13. 분양 완료 adopter 저장은 후속 PR 6 범위다. 현재 PR 5에서는 `adopter_user_id`를 보내지 않는다.
+13. 분양 완료 버튼을 누를 때 앱은 `adopter_user_id`를 함께 보낸다.
 14. 내가 입양한 강아지 목록은 후속 PR 7에서 `GET /api/dogs/adopted/me`로 조회한다.
 15. 입양 후 1주/3개월/6개월 비문 인증, 사후 인증 스케줄/알림, 완료 후 자동 비문 재검증은 이번 follow-up 범위가 아니다.
 
@@ -43,6 +43,18 @@ Storage distinction:
 - `PATCH /api/users/me/profile-image`는 이전 이미지 파일을 즉시 삭제하지 않는다. orphan cleanup은 운영 hardening scope다.
 - 분양글 대표 `profile_image`는 기존처럼 `dog_images.image_type=PROFILE`로 저장한다.
 - `dogs.owner_user_id`는 등록자/작성자 ownership으로 유지하고, 입양자는 `adoption_posts.adopter_user_id`로 추적한다.
+
+## Adoption Completion
+
+완료 처리:
+
+- 앱은 `PATCH /api/adoption-posts/{post_id}/status` request에 `status=COMPLETED`와 `adopter_user_id`를 함께 보낸다.
+- Firebase chat room 화면에서는 선택한 문의자의 `inquirer_user_id`를 `adopter_user_id`로 전달할 수 있다.
+- 서버는 이번 PR에서 chat room participant 여부까지 검증하지 않는다.
+- 완료 성공 후 `dogs.status`는 `ADOPTED`가 된다.
+- `dogs.owner_user_id`는 작성자/등록자 기준으로 유지된다.
+- 내가 입양한 강아지 목록은 다음 PR의 `GET /api/dogs/adopted/me`에서 제공한다.
+- 입양 후 1주/3개월/6개월 인증은 이번 범위가 아니다.
 
 ## Adoption Post Likes
 

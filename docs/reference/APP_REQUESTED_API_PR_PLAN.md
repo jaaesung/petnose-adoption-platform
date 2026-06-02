@@ -212,9 +212,13 @@ Acceptance criteria:
 
 Follow-up:
 
-- PR 6 remains adoption completion adopter storage.
+- PR 6 follows with adoption completion adopter storage.
 
 ## PR 6 feat/adoption-completion-adopter
+
+Status:
+
+- Implemented in this PR.
 
 Purpose:
 
@@ -225,6 +229,7 @@ Included files:
 - `adoption_posts.adopter_user_id` and `adopted_at` migration/entity fields.
 - Status transition service validation.
 - Adoption status API tests.
+- API contract, app handoff, active DBML, and canonical SQL updates.
 
 Excluded scope:
 
@@ -237,6 +242,10 @@ Acceptance criteria:
 - `adopter_user_id` must be an active user and must not equal `author_user_id`.
 - `dogs.status = ADOPTED` remains unchanged behavior.
 - `adoption_posts.adopter_user_id` stores the adopter.
+
+Follow-up:
+
+- PR 7 remains my adopted dogs API.
 
 ## PR 7 feat/my-adopted-dogs-api
 
