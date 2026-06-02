@@ -1557,9 +1557,15 @@ curl -X POST "http://localhost/api/adoption-posts/<post_id>/handover-verificatio
 
 Firebase chat/push is an optional communication layer. It does not change the canonical 6-table MySQL schema and does not replace MySQL as the source of truth.
 
-All endpoints in this section require a Spring Bearer token. When Firebase is disabled, authenticated requests return `503` with `FIREBASE_DISABLED`.
+All endpoints in this section require a Spring Bearer token. When Firebase is disabled, authenticated requests return `503` with `FIREBASE_DISABLED`. Disabled mode is a normal runtime mode for local/dev environments where Firebase chat is intentionally not wired.
 
 Firestore documents are realtime snapshots for chat UI/runtime state only. Spring Boot remains authoritative for room creation, message sending, FCM token registration, read marking, and post-status-based chat permission decisions. Flutter may read Firestore through realtime listeners, but must not write chat messages directly to Firestore.
+
+Enabled-mode backend testing requires `FIREBASE_ENABLED=true`, `FIREBASE_PROJECT_ID`, a service account JSON stored outside the repository, `FIREBASE_CREDENTIALS_HOST_PATH` pointing to that host file, and explicit inclusion of `infra/docker/compose.firebase.yaml` so the container sees `/run/secrets/firebase-service-account.json`.
+
+App developers who call only a shared dev server do not receive the service account JSON. They need the API base URL, Spring credential/JWT, Firebase client app configuration, and the Firebase sign-in flow using `POST /api/firebase/custom-token`.
+
+These APIs do not add MySQL chat tables, do not change Flyway migrations, and do not change the canonical MySQL domain schema.
 
 Status policy:
 
