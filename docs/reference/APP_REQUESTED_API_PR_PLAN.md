@@ -6,6 +6,8 @@ This document fixes the PR split for app-team follow-up API requests before impl
 
 Canonical endpoint drafts live in `../PETNOSE_MVP_API_CONTRACT.md`. App connection order lives in `../PETNOSE_APP_API_HANDOFF.md`.
 
+`docs/db/petnose_mvp_schema.dbml` 및 `docs/db/V20260508__mvp_canonical_schema.sql`은 backend canonical schema tests의 입력이므로 planned schema는 여기에 기록하지 않고, 실제 Flyway/entity/test 구현 PR에서 함께 갱신한다.
+
 ## Global Scope Rules
 
 Included follow-up scope:
