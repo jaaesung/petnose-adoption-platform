@@ -35,6 +35,20 @@ Storage distinction:
 - 분양글 대표 `profile_image`는 기존처럼 `dog_images.image_type=PROFILE`로 저장한다.
 - `dogs.owner_user_id`는 등록자/작성자 ownership으로 유지하고, 입양자는 `adoption_posts.adopter_user_id`로 추적한다.
 
+## Firebase Chat Connection Note
+
+`FIREBASE_DISABLED`가 나오면 앱 요청은 Spring 서버에 도달했고 Spring 인증도 통과한 것이다. 이 경우 앱 코드나 API route 누락보다 서버 Firebase runtime 설정을 먼저 확인한다.
+
+앱은 Firestore에 chat room, message, device token을 직접 write하지 않는다. 앱 write flow는 Spring API를 기준으로 한다.
+
+- `POST /api/firebase/custom-token`로 Firebase custom token을 발급받고 Firebase sign-in에 사용한다.
+- `POST /api/chat/rooms`로 채팅방을 생성하거나 기존 방을 받는다.
+- `POST /api/chat/rooms/{room_id}/messages`로 메시지를 보낸다.
+- `PATCH /api/chat/rooms/{room_id}/read`로 읽음 상태를 갱신한다.
+- `PUT /api/users/me/fcm-token`로 FCM token을 등록한다.
+
+Firestore realtime listener는 chat room/message read 용도로만 사용한다. 공유 dev 환경에서는 앱팀이 service account JSON을 받지 않는다.
+
 ## Dog Registration
 
 ```http

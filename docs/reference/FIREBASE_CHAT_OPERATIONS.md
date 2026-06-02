@@ -26,21 +26,103 @@ The container credential path is:
 /run/secrets/firebase-service-account.json
 ```
 
-## App Team Runtime Guidance
+## FIREBASE_DISABLED Troubleshooting
 
-`FIREBASE_DISABLED` is the expected response from authenticated Firebase chat endpoints when the backend is running with Firebase disabled. Treat it as a runtime configuration result, not as evidence that the Spring API route is missing.
+Symptoms:
 
-Shared dev server guidance:
+- `POST /api/firebase/custom-token`
+- `POST /api/chat/rooms`
+- `GET /api/chat/rooms`
+- `POST /api/chat/rooms/{room_id}/messages`
+- `PATCH /api/chat/rooms/{room_id}/read`
+- `PUT /api/users/me/fcm-token`
 
-- Do not send Firebase service account JSON to app developers for shared dev-server testing.
-- App developers can validate Spring authentication and endpoint wiring against the shared backend even when Firebase chat returns `FIREBASE_DISABLED`.
-- MySQL domain data remains authoritative. Firebase is only an optional communication layer.
+When these endpoints return `503` with `FIREBASE_DISABLED` after authentication, the request reached Spring Boot and Spring authentication passed, but Firebase Admin SDK runtime wiring is off. This is a server runtime configuration result, not an app-code problem and not evidence that the route is missing.
 
-Local backend guidance:
+Most common causes:
 
-- Only developers who need to test real Firebase connectivity from their own local backend need `FIREBASE_PROJECT_ID`, `FIREBASE_CREDENTIALS_HOST_PATH`, and `firebase-service-account.json`.
-- Store `firebase-service-account.json` outside the repository and point `FIREBASE_CREDENTIALS_HOST_PATH` to that external file.
-- Never commit service account JSON, Firebase CLI credentials, `.env` files, or generated secret files.
+- `infra/docker/compose.firebase.yaml` was not included in the compose command.
+- `FIREBASE_ENABLED=true` is missing from the running container.
+- `FIREBASE_PROJECT_ID` is missing.
+- `FIREBASE_CREDENTIALS_HOST_PATH` is missing.
+- The service account JSON does not exist at the host path.
+- The host path is mounted to the wrong container path.
+- `FIREBASE_CREDENTIALS_PATH` inside the container is not `/run/secrets/firebase-service-account.json`.
+
+Firebase chat/push is an optional communication layer. MySQL remains the source of truth, and Firestore stores only chat room, message, and device token runtime snapshots. Spring Boot remains authoritative for custom token issue, chat room creation, message send, read marking, FCM token registration, and post-status permission checks.
+
+## Shared dev server policy for app developers
+
+App developers do not receive the Firebase service account JSON when they call only the shared dev server API.
+
+The service account JSON stays with the server operator and is placed only on the server secret path. App developers need:
+
+- API base URL
+- Spring login credential or Spring JWT
+- Firebase client app configuration
+- The Firebase sign-in flow that uses the result of `POST /api/firebase/custom-token`
+
+Do not put Firebase custom tokens or service account JSON in logs, screenshots, issue comments, or PR descriptions.
+
+## Local backend Firebase test policy
+
+App developers need Firebase server credentials only when they run the backend locally and need to test real Firebase chat connectivity from that local backend.
+
+Required local backend values:
+
+- `FIREBASE_PROJECT_ID`
+- `FIREBASE_CREDENTIALS_HOST_PATH`
+- `firebase-service-account.json`
+- explicit inclusion of `infra/docker/compose.firebase.yaml`
+
+Store the service account JSON outside the repository.
+
+Example host paths:
+
+- `/opt/petnose/secrets/firebase-service-account.json`
+- `C:/Dev/petnose-secrets/firebase-service-account.json`
+
+## Runtime verification commands
+
+Start a Firebase-enabled dev runtime:
+
+```bash
+docker compose \
+  --env-file infra/docker/.env \
+  -f infra/docker/compose.yaml \
+  -f infra/docker/compose.dev.yaml \
+  -f infra/docker/compose.firebase.yaml \
+  up -d --build
+```
+
+Check Firebase-related container environment variables:
+
+```bash
+docker compose \
+  --env-file infra/docker/.env \
+  -f infra/docker/compose.yaml \
+  -f infra/docker/compose.dev.yaml \
+  -f infra/docker/compose.firebase.yaml \
+  exec spring-api printenv | grep FIREBASE
+```
+
+Check the credential mount:
+
+```bash
+docker compose \
+  --env-file infra/docker/.env \
+  -f infra/docker/compose.yaml \
+  -f infra/docker/compose.dev.yaml \
+  -f infra/docker/compose.firebase.yaml \
+  exec spring-api ls -l /run/secrets/firebase-service-account.json
+```
+
+Smoke test examples:
+
+```powershell
+./scripts/verify-firebase-chat-smoke.ps1 -Mode disabled -BaseUrl http://localhost:8080 -BearerToken "<jwt>"
+./scripts/verify-firebase-chat-smoke.ps1 -Mode enabled -BaseUrl http://localhost:8080 -BearerToken "<jwt>" -PostId 123
+```
 
 ## Dev Run Command
 
