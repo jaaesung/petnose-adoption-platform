@@ -174,21 +174,27 @@ CREATE TABLE verification_logs (
 CREATE TABLE adoption_posts (
     id BIGINT NOT NULL AUTO_INCREMENT,
     author_user_id BIGINT NOT NULL,
+    adopter_user_id BIGINT NULL,
     dog_id CHAR(36) NOT NULL,
     title VARCHAR(200) NOT NULL,
     content TEXT NOT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     published_at TIMESTAMP NULL,
     closed_at TIMESTAMP NULL,
+    adopted_at TIMESTAMP NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     KEY idx_adoption_posts_author_user_id (author_user_id),
+    KEY idx_adoption_posts_adopter_user_id (adopter_user_id),
+    KEY idx_adoption_posts_adopter_status_adopted_at (adopter_user_id, status, adopted_at),
     KEY idx_adoption_posts_dog_id (dog_id),
     KEY idx_adoption_posts_status (status),
     KEY idx_adoption_posts_published_at (published_at),
     CONSTRAINT fk_adoption_posts_author_user
         FOREIGN KEY (author_user_id) REFERENCES users (id),
+    CONSTRAINT fk_adoption_posts_adopter_user
+        FOREIGN KEY (adopter_user_id) REFERENCES users (id),
     CONSTRAINT fk_adoption_posts_dog
         FOREIGN KEY (dog_id) REFERENCES dogs (id),
     CONSTRAINT chk_adoption_posts_status

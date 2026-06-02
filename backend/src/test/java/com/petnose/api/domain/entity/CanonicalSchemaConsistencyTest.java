@@ -87,6 +87,20 @@ class CanonicalSchemaConsistencyTest {
             "is_active",
             "created_at"
     );
+    private static final Set<String> ADOPTION_POST_COLUMNS = Set.of(
+            "id",
+            "author_user_id",
+            "adopter_user_id",
+            "dog_id",
+            "title",
+            "content",
+            "status",
+            "published_at",
+            "closed_at",
+            "adopted_at",
+            "created_at",
+            "updated_at"
+    );
     private static final Set<String> ADOPTION_POST_LIKE_COLUMNS = Set.of(
             "id",
             "user_id",
@@ -225,6 +239,23 @@ class CanonicalSchemaConsistencyTest {
     }
 
     @Test
+    void activeCleanSqlAdoptionPostsTrackCompletionAdopter() throws Exception {
+        String sql = canonicalSql();
+        Map<String, Set<String>> columnsByTable = columnsByTable(sql);
+        String adoptionPosts = tableDefinitions(sql).get("adoption_posts");
+
+        assertThat(columnsByTable.get("adoption_posts"))
+                .containsExactlyInAnyOrderElementsOf(ADOPTION_POST_COLUMNS);
+        assertThat(adoptionPosts).contains(
+                "adopter_user_id BIGINT NULL",
+                "adopted_at TIMESTAMP NULL",
+                "KEY idx_adoption_posts_adopter_user_id (adopter_user_id)",
+                "KEY idx_adoption_posts_adopter_status_adopted_at (adopter_user_id, status, adopted_at)",
+                "FOREIGN KEY (adopter_user_id) REFERENCES users (id)"
+        );
+    }
+
+    @Test
     void activeCleanSqlIndexesForeignKeysAndChecksReferenceDeclaredColumns() throws Exception {
         Map<String, String> tableBodies = tableDefinitions(canonicalSql());
         Map<String, Set<String>> columnsByTable = columnsByTable(tableBodies);
@@ -254,7 +285,11 @@ class CanonicalSchemaConsistencyTest {
                 "expires_at timestamp",
                 "used_at timestamp",
                 "Table adoption_post_likes",
-                "(user_id, post_id) [unique, name: \"uk_adoption_post_likes_user_post\"]"
+                "(user_id, post_id) [unique, name: \"uk_adoption_post_likes_user_post\"]",
+                "adopter_user_id bigint",
+                "adopted_at timestamp",
+                "adopter_user_id [name: \"idx_adoption_posts_adopter_user_id\"]",
+                "(adopter_user_id, status, adopted_at) [name: \"idx_adoption_posts_adopter_status_adopted_at\"]"
         );
         assertThat(dbmlEnumValues(dbml, "dog_status"))
                 .containsExactly("PENDING", "REGISTERED", "DUPLICATE_SUSPECTED", "REVIEW_REQUIRED", "REJECTED", "ADOPTED", "INACTIVE");

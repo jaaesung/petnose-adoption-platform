@@ -287,14 +287,20 @@ public class AdoptionPostService {
         }
 
         AdoptionPostStatus targetStatus = parseStatusUpdateRequest(request);
+        Long adopterUserId = adopterUserId(request);
+        validateAdopterUsageForTargetStatus(targetStatus, adopterUserId);
+
         AdoptionPostStatus currentStatus = post.getStatus();
         if (currentStatus == targetStatus) {
             return toStatusUpdateResponse(post);
         }
         validateStatusTransition(currentStatus, targetStatus);
+        if (targetStatus == AdoptionPostStatus.COMPLETED) {
+            validateCompletionAdopter(post, adopterUserId);
+        }
 
         LocalDateTime now = LocalDateTime.now();
-        applyStatusTransition(currentUserId, post, currentStatus, targetStatus, now);
+        applyStatusTransition(currentUserId, post, currentStatus, targetStatus, adopterUserId, now);
         adoptionPostRepository.flush();
         scheduleChatRoomStatusSync(post.getId(), post.getStatus());
         return toStatusUpdateResponse(post);
@@ -386,6 +392,20 @@ public class AdoptionPostService {
         return AdoptionPostStatus.fromStatusUpdateRequest(request == null ? null : request.status());
     }
 
+    private Long adopterUserId(AdoptionPostStatusUpdateRequest request) {
+        return request == null ? null : request.adopterUserId();
+    }
+
+    private void validateAdopterUsageForTargetStatus(AdoptionPostStatus targetStatus, Long adopterUserId) {
+        if (targetStatus != AdoptionPostStatus.COMPLETED && adopterUserId != null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "ADOPTER_NOT_ALLOWED_FOR_STATUS",
+                    "adopter_user_id는 COMPLETED 상태 전이에만 사용할 수 있습니다."
+            );
+        }
+    }
+
     private void validateStatusTransition(AdoptionPostStatus currentStatus, AdoptionPostStatus targetStatus) {
         boolean allowed = switch (currentStatus) {
             case DRAFT -> targetStatus == AdoptionPostStatus.OPEN || targetStatus == AdoptionPostStatus.CLOSED;
@@ -407,11 +427,39 @@ public class AdoptionPostService {
         }
     }
 
+    private void validateCompletionAdopter(AdoptionPost post, Long adopterUserId) {
+        if (adopterUserId == null) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "ADOPTER_REQUIRED",
+                    "COMPLETED 상태 전이에는 adopter_user_id가 필요합니다."
+            );
+        }
+
+        User adopter = userRepository.findById(adopterUserId)
+                .orElseThrow(() -> new ApiException(
+                        HttpStatus.NOT_FOUND,
+                        "ADOPTER_NOT_FOUND",
+                        "입양자를 찾을 수 없습니다."
+                ));
+        if (!adopter.isActive()) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "ADOPTER_INACTIVE", "비활성 입양자입니다.");
+        }
+        if (adopter.getId().equals(post.getAuthorUserId())) {
+            throw new ApiException(
+                    HttpStatus.BAD_REQUEST,
+                    "ADOPTER_SELF_NOT_ALLOWED",
+                    "작성자는 자신의 분양글의 입양자로 지정될 수 없습니다."
+            );
+        }
+    }
+
     private void applyStatusTransition(
             Long currentUserId,
             AdoptionPost post,
             AdoptionPostStatus currentStatus,
             AdoptionPostStatus targetStatus,
+            Long adopterUserId,
             LocalDateTime now
     ) {
         if (currentStatus == AdoptionPostStatus.DRAFT && targetStatus == AdoptionPostStatus.OPEN) {
@@ -442,6 +490,8 @@ public class AdoptionPostService {
         if (targetStatus == AdoptionPostStatus.COMPLETED) {
             post.setStatus(AdoptionPostStatus.COMPLETED);
             post.setClosedAt(now);
+            post.setAdopterUserId(adopterUserId);
+            post.setAdoptedAt(now);
             markDogAdopted(post.getDogId());
             return;
         }
@@ -647,6 +697,8 @@ public class AdoptionPostService {
                 post.getStatus().name(),
                 post.getPublishedAt(),
                 post.getClosedAt(),
+                post.getAdopterUserId(),
+                post.getAdoptedAt(),
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );

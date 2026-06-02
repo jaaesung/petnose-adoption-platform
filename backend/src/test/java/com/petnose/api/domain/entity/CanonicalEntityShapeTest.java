@@ -229,10 +229,18 @@ class CanonicalEntityShapeTest {
 
     @Test
     void adoptionPostEntityAndRuntimeMigrationAlignWithCreatePolicy() throws Exception {
+        Set<String> fields = declaredFieldNames(AdoptionPost.class);
+        Column adopterUserId = AdoptionPost.class.getDeclaredField("adopterUserId").getAnnotation(Column.class);
+        Column adoptedAt = AdoptionPost.class.getDeclaredField("adoptedAt").getAnnotation(Column.class);
         Column title = AdoptionPost.class.getDeclaredField("title").getAnnotation(Column.class);
         Column content = AdoptionPost.class.getDeclaredField("content").getAnnotation(Column.class);
         Column status = AdoptionPost.class.getDeclaredField("status").getAnnotation(Column.class);
 
+        assertThat(fields).contains("adopterUserId", "adoptedAt");
+        assertThat(adopterUserId.name()).isEqualTo("adopter_user_id");
+        assertThat(adopterUserId.nullable()).isTrue();
+        assertThat(adoptedAt.name()).isEqualTo("adopted_at");
+        assertThat(adoptedAt.nullable()).isTrue();
         assertThat(title.length()).isEqualTo(200);
         assertThat(title.nullable()).isFalse();
         assertThat(content.nullable()).isFalse();
@@ -243,6 +251,15 @@ class CanonicalEntityShapeTest {
         assertThat(migration).contains(
                 "MODIFY title VARCHAR(200) NOT NULL",
                 "MODIFY content TEXT NOT NULL"
+        );
+
+        String adopterMigration = resourceText("db/migration/V9__add_adoption_completion_adopter.sql");
+        assertThat(adopterMigration).contains(
+                "ADD COLUMN adopter_user_id BIGINT NULL AFTER author_user_id",
+                "ADD COLUMN adopted_at TIMESTAMP NULL AFTER closed_at",
+                "ADD KEY idx_adoption_posts_adopter_user_id (adopter_user_id)",
+                "ADD KEY idx_adoption_posts_adopter_status_adopted_at (adopter_user_id, status, adopted_at)",
+                "FOREIGN KEY (adopter_user_id) REFERENCES users(id)"
         );
     }
 

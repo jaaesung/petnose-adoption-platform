@@ -64,7 +64,7 @@ handover verification endpoint는 MVP trust/safety flow의 일부다. 이 contra
 
 ## App-Requested API Delta Plan
 
-이 섹션은 앱팀 추가 요청사항의 API/DB/PR 단위를 고정한 contract다. PR 3까지 profile image 흐름이 구현되었고, PR 4에서 password change/reset 흐름이 구현되었다. PR 5에서 좋아요/찜 흐름이 `adoption_post_likes` 관계 테이블로 구현된다. 입양 완료 adopter 저장, 내가 입양한 강아지 목록은 후속 PR 범위다.
+이 섹션은 앱팀 추가 요청사항의 API/DB/PR 단위를 고정한 contract다. PR 3까지 profile image 흐름이 구현되었고, PR 4에서 password change/reset 흐름이 구현되었다. PR 5에서 좋아요/찜 흐름이 `adoption_post_likes` 관계 테이블로 구현되었다. PR 6에서는 입양 완료 시 adopter 저장을 구현한다. 내가 입양한 강아지 목록은 후속 PR 7 범위다.
 
 Included planned scope:
 
@@ -75,8 +75,8 @@ Included planned scope:
 - 로그인 사용자 비밀번호 변경 API는 PR 4에서 구현한다.
 - 비밀번호 찾기는 비밀번호 조회가 아니라 reset token 기반 재설정 API로 PR 4에서 구현한다.
 - 좋아요/찜은 `users.liked` JSON/map이 아니라 `adoption_post_likes` 관계 테이블로 구현한다. MySQL `adoption_post_likes`가 좋아요 상태의 source of truth다.
-- 입양 완료 시 `adoption_posts.adopter_user_id`를 저장한다.
-- 내가 입양한 강아지 목록 `GET /api/dogs/adopted/me`를 추가한다.
+- 입양 완료 시 `adoption_posts.adopter_user_id`와 `adopted_at`을 저장한다.
+- 내가 입양한 강아지 목록 `GET /api/dogs/adopted/me`는 후속 PR 7에서 추가한다.
 
 Excluded planned scope:
 
@@ -91,6 +91,7 @@ Core policies:
 
 - `dogs.owner_user_id`는 기존 등록자/작성자 ownership으로 유지한다.
 - 입양자는 `adoption_posts.adopter_user_id`로 추적한다.
+- `adoption_posts.adopter_user_id`는 `users.id` reference이며 `ADOPTER` role이 아니다.
 - `COMPLETED` 처리 시 `dogs.status = ADOPTED`는 유지한다.
 - 내가 입양한 강아지 목록은 `adoption_posts.status = COMPLETED AND adoption_posts.adopter_user_id = current_user_id` 기준으로 조회한다.
 - 사용자 비밀번호는 절대 조회 API를 만들지 않는다.
@@ -343,11 +344,24 @@ Policy:
 - `COMPLETED` 전이에서 `adopter_user_id`는 required다.
 - `adopter_user_id`는 active user여야 한다.
 - `adopter_user_id`는 `author_user_id`와 같으면 안 된다.
+- `adopter_user_id`는 `users.id` reference이며 `ADOPTER` role이 아니다.
+- `COMPLETED` 외 status request에 `adopter_user_id`가 포함되면 `ADOPTER_NOT_ALLOWED_FOR_STATUS`를 반환한다.
 - `dogs.status = ADOPTED`는 유지한다.
 - `dogs.owner_user_id`는 변경하지 않는다.
 - `adoption_posts.adopter_user_id`로 입양자를 저장한다.
+- `adoption_posts.adopted_at`은 완료 처리 시각이다.
+
+Errors:
+
+- `ADOPTER_REQUIRED`: `COMPLETED` 전이에 `adopter_user_id`가 없다.
+- `ADOPTER_NOT_FOUND`: `adopter_user_id`가 존재하지 않는다.
+- `ADOPTER_INACTIVE`: adopter user가 inactive다.
+- `ADOPTER_SELF_NOT_ALLOWED`: adopter가 post author와 같다.
+- `ADOPTER_NOT_ALLOWED_FOR_STATUS`: `COMPLETED` 외 status에 `adopter_user_id`가 포함되었다.
 
 ### J. 내가 입양한 강아지 목록
+
+이 endpoint는 후속 PR 7 범위다. PR 6에서는 조회 API를 구현하지 않고, 조회 기준이 되는 `adoption_posts.adopter_user_id`와 `adopted_at`만 저장한다.
 
 ```http
 GET /api/dogs/adopted/me?page=0&size=20
@@ -1439,6 +1453,24 @@ Request body:
 }
 ```
 
+Request body for `OPEN -> COMPLETED`:
+
+```json
+{
+  "status": "COMPLETED",
+  "adopter_user_id": 45
+}
+```
+
+Request body for `RESERVED -> COMPLETED`:
+
+```json
+{
+  "status": "COMPLETED",
+  "adopter_user_id": 45
+}
+```
+
 Response `200`:
 
 ```json
@@ -1450,8 +1482,28 @@ Response `200`:
   "status": "RESERVED",
   "published_at": "2026-05-13T10:00:00",
   "closed_at": null,
+  "adopter_user_id": null,
+  "adopted_at": null,
   "created_at": "2026-05-13T10:00:00",
   "updated_at": "2026-05-13T10:05:00"
+}
+```
+
+Response `200` for `COMPLETED`:
+
+```json
+{
+  "post_id": 501,
+  "dog_id": "uuid",
+  "title": "말티즈 가족을 찾습니다",
+  "content": "상세 내용...",
+  "status": "COMPLETED",
+  "published_at": "2026-05-13T10:00:00",
+  "closed_at": "2026-06-02T10:30:00",
+  "adopter_user_id": 45,
+  "adopted_at": "2026-06-02T10:30:00",
+  "created_at": "2026-05-13T10:00:00",
+  "updated_at": "2026-06-02T10:30:00"
 }
 ```
 
@@ -1471,14 +1523,24 @@ Contract notes:
 - Bearer JWT authorization이 필요하다.
 - post owner만 status를 수정할 수 있다.
 - `COMPLETED`와 `CLOSED`는 terminal state다.
-- `COMPLETED`는 `dogs.status`를 `ADOPTED`로 설정한다.
+- `COMPLETED` request에는 `adopter_user_id`가 required이며, active `users.id`여야 한다.
+- `adopter_user_id`는 `ADOPTER` role이 아니라 `users.id` reference다.
+- `adopter_user_id`는 post `author_user_id`와 같을 수 없다.
+- `COMPLETED`는 `adoption_posts.adopter_user_id`와 `adopted_at`을 저장하고 `dogs.status`를 `ADOPTED`로 설정한다.
+- `COMPLETED`는 `dogs.owner_user_id`를 변경하지 않는다.
 - `CLOSED`는 `dogs.status`를 `ADOPTED`로 설정하지 않는다.
-- same-status PATCH는 no-op으로 구현되어 현재 post status response를 반환한다.
+- `CLOSED`는 `adopter_user_id`를 요구하지 않으며 `adopter_user_id`/`adopted_at`을 저장하지 않는다.
+- `COMPLETED` 외 status request에 `adopter_user_id`가 포함되면 `ADOPTER_NOT_ALLOWED_FOR_STATUS`를 반환한다.
+- same-status PATCH는 no-op으로 구현되어 현재 post status response를 반환한다. 이미 `COMPLETED`인 post에 다른 `adopter_user_id`를 보내도 기존 adopter를 rewrite하지 않는다.
 - `DRAFT` -> `OPEN`은 post creation과 같은 publish eligibility를 검증한다.
 - missing post는 `POST_NOT_FOUND`를 반환한다.
 - non-owner update는 `POST_OWNER_MISMATCH`를 반환한다.
 - invalid `status`는 `INVALID_POST_STATUS`를 반환한다.
 - invalid transition은 `INVALID_STATUS_TRANSITION`을 반환한다.
+- missing completion adopter는 `ADOPTER_REQUIRED`를 반환한다.
+- unknown completion adopter는 `ADOPTER_NOT_FOUND`를 반환한다.
+- inactive completion adopter는 `ADOPTER_INACTIVE`를 반환한다.
+- self adopter는 `ADOPTER_SELF_NOT_ALLOWED`를 반환한다.
 - missing, malformed, invalid, or expired JWT는 `UNAUTHORIZED`를 반환한다.
 
 ### 인도 시점 비문 확인(Handover-Time Dog Nose Verification)
@@ -1726,6 +1788,11 @@ Failure behavior:
 - `PROFILE_IMAGE_REQUIRED`: adoption post 생성 multipart request에 `profile_image`가 없거나 비어 있다.
 - `INVALID_POST_STATUS`: 지원하지 않거나 malformed status value다.
 - `INVALID_STATUS_TRANSITION`: 요청한 status transition이 허용되지 않는다.
+- `ADOPTER_REQUIRED`: `COMPLETED` 전이에 `adopter_user_id`가 없다.
+- `ADOPTER_NOT_FOUND`: `adopter_user_id`가 existing user로 매핑되지 않는다.
+- `ADOPTER_INACTIVE`: `adopter_user_id`가 inactive user로 매핑된다.
+- `ADOPTER_SELF_NOT_ALLOWED`: adopter가 post author와 같다.
+- `ADOPTER_NOT_ALLOWED_FOR_STATUS`: `COMPLETED` 외 status request에 `adopter_user_id`가 포함되었다.
 - `INVALID_PAGE_REQUEST`: page 또는 size parameter가 supported range 밖이다.
 - `NOSE_IMAGE_REQUIRED`: handover nose image multipart field가 없거나 비어 있다.
 - `INVALID_NOSE_IMAGE`: handover nose image를 처리할 수 없다.
@@ -1817,7 +1884,7 @@ curl -X PATCH "http://localhost/api/adoption-posts/<post_id>/status" \
 curl -X PATCH "http://localhost/api/adoption-posts/<post_id>/status" \
   -H "Authorization: Bearer <JWT>" \
   -H "Content-Type: application/json" \
-  -d '{"status":"COMPLETED"}'
+  -d '{"status":"COMPLETED","adopter_user_id":45}'
 
 curl -X POST "http://localhost/api/adoption-posts/<post_id>/handover-verifications" \
   -H "Authorization: Bearer <JWT>" \
