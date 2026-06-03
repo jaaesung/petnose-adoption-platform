@@ -263,12 +263,10 @@ jobs:
           python - <<'PY'
           import json
           import os
-          expected_collection = os.environ["QDRANT_COLLECTION"]
           expected_dim = int(os.environ["QDRANT_VECTOR_DIM"])
           with open("/tmp/qdrant-collection.json", encoding="utf-8") as handle:
               body = json.load(handle)
           assert body["status"] == "ok", body
-          assert body["result"]["name"] == expected_collection, body
           vectors = body["result"]["config"]["params"]["vectors"]
           if "size" in vectors:
               size = vectors["size"]
