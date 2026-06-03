@@ -126,10 +126,17 @@ public class DogRegistrationService {
         String scoreBreakdownJson = toScoreBreakdownJson(scoreBreakdown, qualityReport);
 
         List<FileStorageService.StoredFile> storedFiles = storeNoseImages(dogId, uploads);
-        PendingRegistration pending = transactionTemplate.execute(status ->
-                createPendingRows(user.getId(), dogId, request, birthDate, storedFiles)
-        );
+        PendingRegistration pending;
+        try {
+            pending = transactionTemplate.execute(status ->
+                    createPendingRows(user.getId(), dogId, request, birthDate, storedFiles)
+            );
+        } catch (RuntimeException e) {
+            fileStorageService.deleteStoredFilesQuietly(storedFiles);
+            throw e;
+        }
         if (pending == null) {
+            fileStorageService.deleteStoredFilesQuietly(storedFiles);
             throw new ApiException(HttpStatus.INTERNAL_SERVER_ERROR, "REGISTRATION_INIT_FAILED", "등록 초기화에 실패했습니다.");
         }
 
@@ -279,8 +286,13 @@ public class DogRegistrationService {
 
     private List<FileStorageService.StoredFile> storeNoseImages(String dogId, List<NoseImageUpload> uploads) {
         List<FileStorageService.StoredFile> storedFiles = new ArrayList<>();
-        for (NoseImageUpload upload : uploads) {
-            storedFiles.add(fileStorageService.storeNoseImage(dogId, upload.file()));
+        try {
+            for (NoseImageUpload upload : uploads) {
+                storedFiles.add(fileStorageService.storeNoseImage(dogId, upload.file()));
+            }
+        } catch (RuntimeException e) {
+            fileStorageService.deleteStoredFilesQuietly(storedFiles);
+            throw e;
         }
         return List.copyOf(storedFiles);
     }

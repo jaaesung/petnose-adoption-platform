@@ -33,11 +33,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.TransactionStatus;
+import org.springframework.transaction.support.TransactionCallback;
 import org.springframework.transaction.support.SimpleTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -49,6 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
@@ -211,6 +214,7 @@ class DogRegistrationServiceTest {
                         DogNoseEmbeddingKind.REFERENCE,
                         DogNoseEmbeddingKind.CENTROID
                 );
+        verify(fileStorageService, never()).deleteStoredFilesQuietly(anyCollection());
     }
 
     @Test
@@ -222,6 +226,66 @@ class DogRegistrationServiceTest {
         assertNoPipelineRows();
         verify(embedClient, never()).embedBatch(anyList());
         verify(qdrantDogVectorClient, never()).upsertAll(anyList());
+    }
+
+    @Test
+    void registerCleansStoredNoseImagesWhenStoreLoopFailsAfterPartialSuccess() {
+        when(embedClient.embedBatch(anyList())).thenReturn(batchResponse(consistentVectors()));
+        List<FileStorageService.StoredFile> storedBeforeFailure = List.of(
+                storedFile("dogs/dog-1/nose/nose_1.jpg"),
+                storedFile("dogs/dog-1/nose/nose_2.jpg")
+        );
+        AtomicInteger storeCalls = new AtomicInteger();
+        when(fileStorageService.storeNoseImage(anyString(), any())).thenAnswer(invocation -> {
+            int call = storeCalls.incrementAndGet();
+            if (call == 3) {
+                throw new RuntimeException("file store failed");
+            }
+            return storedBeforeFailure.get(call - 1);
+        });
+
+        assertThatThrownBy(() -> service.register(request(noseImages(5))))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("file store failed");
+
+        ArgumentCaptor<Collection<FileStorageService.StoredFile>> deleteCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(fileStorageService).deleteStoredFilesQuietly(deleteCaptor.capture());
+        assertThat(deleteCaptor.getValue()).containsExactlyElementsOf(storedBeforeFailure);
+        assertNoPipelineRows();
+        verify(dogRepository, never()).save(any(Dog.class));
+    }
+
+    @Test
+    void registerCleansStoredNoseImagesWhenPendingRowsFail() {
+        when(embedClient.embedBatch(anyList())).thenReturn(batchResponse(consistentVectors()));
+        when(dogRepository.save(any(Dog.class))).thenThrow(new RuntimeException("db down"));
+
+        assertThatThrownBy(() -> service.register(request(noseImages(5))))
+                .isInstanceOf(RuntimeException.class)
+                .hasMessage("db down");
+
+        ArgumentCaptor<Collection<FileStorageService.StoredFile>> deleteCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(fileStorageService).deleteStoredFilesQuietly(deleteCaptor.capture());
+        assertThat(deleteCaptor.getValue()).hasSize(5);
+    }
+
+    @Test
+    void registerCleansStoredNoseImagesWhenPendingRowsReturnNull() {
+        when(embedClient.embedBatch(anyList())).thenReturn(batchResponse(consistentVectors()));
+        ReflectionTestUtils.setField(service, "transactionTemplate", new TransactionTemplate(transactionManager()) {
+            @Override
+            public <T> T execute(TransactionCallback<T> action) {
+                return null;
+            }
+        });
+
+        assertThatThrownBy(() -> service.register(request(noseImages(5))))
+                .isInstanceOfSatisfying(ApiException.class, e ->
+                        assertThat(e.getErrorCode()).isEqualTo("REGISTRATION_INIT_FAILED"));
+
+        ArgumentCaptor<Collection<FileStorageService.StoredFile>> deleteCaptor = ArgumentCaptor.forClass(Collection.class);
+        verify(fileStorageService).deleteStoredFilesQuietly(deleteCaptor.capture());
+        assertThat(deleteCaptor.getValue()).hasSize(5);
     }
 
     @Test
@@ -327,6 +391,7 @@ class DogRegistrationServiceTest {
         assertThat(response.topMatch().breed()).isEqualTo("Maltese");
 
         verify(qdrantDogVectorClient, never()).upsertAll(anyList());
+        verify(fileStorageService, never()).deleteStoredFilesQuietly(anyCollection());
     }
 
     @Test
@@ -355,6 +420,7 @@ class DogRegistrationServiceTest {
         assertThat(response.topMatch().breed()).isEqualTo("Jindo");
 
         verify(qdrantDogVectorClient).upsertAll(anyList());
+        verify(fileStorageService, never()).deleteStoredFilesQuietly(anyCollection());
     }
 
     @Test
@@ -554,7 +620,11 @@ class DogRegistrationServiceTest {
     }
 
     private static TransactionTemplate transactionTemplate() {
-        return new TransactionTemplate(new PlatformTransactionManager() {
+        return new TransactionTemplate(transactionManager());
+    }
+
+    private static PlatformTransactionManager transactionManager() {
+        return new PlatformTransactionManager() {
             @Override
             public TransactionStatus getTransaction(TransactionDefinition definition) {
                 return new SimpleTransactionStatus();
@@ -567,6 +637,6 @@ class DogRegistrationServiceTest {
             @Override
             public void rollback(TransactionStatus status) {
             }
-        });
+        };
     }
 }

@@ -98,6 +98,7 @@ class AdoptionPostServiceTest {
         verify(dogRepository, never()).save(any());
         verify(verificationLogRepository, never()).save(any());
         verify(fileStorageService).storeProfileImage(eq(dog.getId()), any());
+        verify(fileStorageService).deleteOnTransactionRollback(stored);
         verify(dogImageRepository).save(org.mockito.ArgumentMatchers.argThat(image ->
                 image.getDogId().equals(dog.getId())
                         && image.getImageType() == DogImageType.PROFILE

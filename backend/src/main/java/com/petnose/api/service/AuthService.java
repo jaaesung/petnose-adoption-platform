@@ -267,6 +267,7 @@ public class AuthService {
 
     private void storeUserProfileImage(User user, MultipartFile profileImage) {
         FileStorageService.StoredFile stored = fileStorageService.storeUserProfileImage(user.getId(), profileImage);
+        fileStorageService.deleteOnTransactionRollback(stored);
         user.setProfileImagePath(stored.relativePath());
         user.setProfileImageMimeType(stored.mimeType());
         user.setProfileImageFileSize(stored.fileSize());
