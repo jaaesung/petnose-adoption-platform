@@ -35,7 +35,7 @@
 
 ## Pre-Share Schema Count Note
 
-schema count 불일치는 해결되었다. pre-adoption nose verification ticket은 `verification_logs`로 통합되었고 dog nose v2 reference metadata는 `dog_nose_references`가 추적한다. current MVP domain/relationship table은 7개이며, auth support table로 `password_reset_tokens`가 추가되었다. 상세 refactor 기록은 `docs/reference/MVP_SCHEMA_TABLE_COUNT_REVIEW.md`를 확인한다.
+schema count 불일치는 해결되었다. pre-adoption nose verification ticket은 `verification_logs`로 통합되었고 dog nose v2 reference metadata는 `dog_nose_references`가 추적한다. develop 제출 기준 MySQL table은 총 8개다. Core domain/relationship table은 7개이며, auth support table로 `password_reset_tokens`가 1개 추가되었다. 상세 refactor 기록은 `docs/reference/MVP_SCHEMA_TABLE_COUNT_REVIEW.md`를 확인한다.
 
 ## Task-Specific Routing
 
@@ -59,7 +59,8 @@ schema count 불일치는 해결되었다. pre-adoption nose verification ticket
 - 활성 role은 `USER` / `ADMIN`만 사용한다.
 - `SHELTER` / `ADOPTER`는 active role이 아니다.
 - `publisher_profiles`, `shelter_profiles`, `seller_profiles`, `auth_logs`, `reports`, `refresh_tokens`는 active MVP에 없다.
-- 활성 domain/relationship table은 아래 7개다.
+- develop 제출 기준 MySQL table은 총 8개다.
+- 활성 core domain/relationship table은 아래 7개다.
   - `users`
   - `dogs`
   - `dog_images`
@@ -67,7 +68,7 @@ schema count 불일치는 해결되었다. pre-adoption nose verification ticket
   - `verification_logs`
   - `adoption_posts`
   - `adoption_post_likes`
-- 활성 auth support table은 `password_reset_tokens`다. reset token 원문은 저장하지 않고 SHA-256 hash만 저장한다.
+- 활성 auth support table은 `password_reset_tokens` 1개다. domain table로 세지 않으며 reset token 원문은 저장하지 않고 SHA-256 hash만 저장한다.
 - `users`가 `display_name`, `contact_phone`, `region`, optional `profile_image_*`, `is_active`를 직접 가진다.
 - 사용자 payload의 `profile_image_url`은 nullable이며 `users.profile_image_path`에서 `/files/{relative_path}`로 계산한다.
 - `adoption_posts`는 입양 완료 추적을 위해 nullable `adopter_user_id`와 `adopted_at`을 가진다.
@@ -157,7 +158,7 @@ Final app handoff checklist는 `docs/reference/APP_API_FINAL_HANDOFF_CHECKLIST.m
 Dog registration과 adoption post creation ownership은 JWT-principal-only다.
 
 - request `user_id`는 active API contract input이 아니다.
-- 신규 Flutter 분양글 작성 flow는 `POST /api/dogs/register`에서 dog 기본 정보와 `nose_images` 정확히 5장을 등록하고 duplicate/review/pass decision을 검사한다.
+- 신규 Flutter 분양글 작성 flow는 `POST /api/dogs/register`에서 dog 기본 정보와 `nose_images` 정확히 5장을 등록하고 duplicate/pass decision을 검사한다. `REVIEW_REQUIRED`는 호환 값으로 남지만 active normal registration decision에서는 사용하지 않는다.
 - dog registration embedding은 Python `/embed-batch` 1회 호출을 사용한다.
 - client가 close-up cropped nose image를 제공한다고 가정하며 backend는 crop/detection/alignment를 수행하지 않는다.
 - `POST /api/dogs/register` 성공 시 반환된 `dog_id`가 `POST /api/adoption-posts` request의 기준이다.
@@ -197,11 +198,13 @@ Dog Query API는 current dog nose v2 branch에 구현되어 있다.
 아래 항목은 current MVP active scope가 아니다.
 
 - Firebase replacement of MySQL domain data는 제외한다. Firebase chat/push는 optional communication layer로만 허용한다.
+- `post_adoption_verifications` table과 입양 후 1주/3개월/6개월 주기적 비문 인증은 제외한다.
 - reports/admin dashboard는 제외한다.
 - reservation/payment/contract는 제외한다.
 - `SHELTER`, `ADOPTER` 같은 non-canonical role은 제외한다.
 - `publisher_profiles`, `shelter_profiles`, `seller_profiles` 같은 old separate profile table은 제외한다.
 - 별도 `handover_verifications` table은 추가하지 않는다.
+- `dogs.owner_user_id`를 입양자로 변경하지 않는다.
 
 ## 충돌 판단 규칙
 

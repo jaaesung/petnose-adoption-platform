@@ -32,13 +32,22 @@
 | 공유 전 점검 | `reference/MVP_SCHEMA_TABLE_COUNT_REVIEW.md` | 과거 table count 기준 충돌 확인 |
 | 앱 요청 후속 API 계획 | `reference/APP_REQUESTED_API_PR_PLAN.md` | 앱팀 추가 요청사항의 PR 분할/범위 확인 |
 | 앱 요청 API 최종 체크리스트 | `reference/APP_API_FINAL_HANDOFF_CHECKLIST.md` | 앱팀 endpoint/header/field 연결 전 최종 확인 |
-| 실제 runtime E2E | `reference/MVP_BACKEND_FLOW_HANDOFF.md` | `scripts/verify-real-model-mvp-flow.ps1`로 real-model Docker flow 검증 |
+| 실제 runtime E2E | `ops-evidence/dog-nose-v2-smoke-plan.md`, `reference/MVP_BACKEND_FLOW_HANDOFF.md` | dog nose v2 real-model Docker flow 검증 |
 | 로컬 정리 | `reference/LOCAL_CLEANUP_GUIDE.md` | ignored/generated 파일 수동 정리 |
 | 운영 증거 | `ops-evidence/dev-cd-validation-log.md` | 배포/운영 검증 이력 확인 |
 | 앱 요청 API 회귀 증거 | `ops-evidence/app-requested-api-regression-log.md` | PR 8 regression/evidence 결과 확인 |
 | Archive | `archive/**` | 과거 문서 확인용. active 기준으로 사용 금지 |
 
 추가 참고 문서는 `docs/reference/` 아래에 있다. 예를 들어 운영 절차, 환경변수, 백업, 온보딩, 파일 저장 정책은 active canonical을 보조하는 문서로만 사용한다.
+
+## Current Active Snapshot
+
+- develop 제출 기준 MySQL table은 총 8개다.
+- Core domain/relationship table은 `users`, `dogs`, `dog_images`, `dog_nose_references`, `verification_logs`, `adoption_posts`, `adoption_post_likes` 7개다.
+- Auth support table은 `password_reset_tokens` 1개이며 domain table로 세지 않는다.
+- Dog nose v2 registration은 `POST /api/dogs/register`에서 `nose_images` 정확히 5장을 받고 Python `/embed-batch`를 1회 호출한다.
+- Active Qdrant collection은 `dog_nose_embeddings_real_v2`, vector dimension은 `2048`, distance는 `Cosine`이다.
+- Qdrant point id는 UUID이며 `dogs.id`와 같지 않다. point id와 reference metadata는 MySQL `dog_nose_references`가 추적한다.
 
 ## 충돌 규칙
 
