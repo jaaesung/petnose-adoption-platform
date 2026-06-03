@@ -199,6 +199,12 @@ bash infra/scripts/restore.sh uploads backups/uploads/uploads_<YYYYMMDD_HHMMSS>.
 mock 모드에서는 이미지 SHA-256 해시 기반으로 재현 가능한 더미 벡터(128차원)를 반환합니다.  
 실제 모델 적용 시 `python-embed/app/main.py`의 `_load_model()` 함수를 구현하세요.
 
+GitHub Actions `ci.yaml`의 compose smoke는 이 mock/dev 경로만 검증합니다. CI에서는
+`QDRANT_COLLECTION=dog_nose_embeddings_ci_mock`, `QDRANT_VECTOR_DIM=128`을 명시해
+실제 v2 runtime(`dog_nose_embeddings_real_v2`, 2048차원)과 혼동하지 않습니다.
+실제 dog-nose-identification2 checkpoint가 필요한 E2E 검증은
+`scripts/verify-submission-real-model-e2e.ps1`와 제출 evidence 문서에서 다룹니다.
+
 ---
 
 ## Dev 전용 엔드포인트 (`/api/dev/*`)
@@ -319,7 +325,7 @@ docker pull ghcr.io/jaaesung/petnose-spring-api:develop-a1b2c3d
 Settings → Branches → Add rule (대상: `main`):
 
 - `main` 직접 push 금지 — PR을 통해서만 merge
-- Status check 필수: `CI / Spring Boot 테스트` + `CI / Python smoke 테스트` + `CI / Integration smoke (Compose)` + `CI / Docker 이미지 빌드 확인`
+- Status check 필수: `CI / Backend tests` + `CI / Python tests` + `CI / Docs and script sanity` + `CI / Compose mock smoke` + `CI / Docker build`
 - 최소 1인 리뷰 승인 후 merge
 
 > 현재는 설정되어 있지 않으므로 저장소 관리자가 GitHub UI에서 직접 설정해야 합니다.
