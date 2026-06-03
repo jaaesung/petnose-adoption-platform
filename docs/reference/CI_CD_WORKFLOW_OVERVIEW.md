@@ -44,7 +44,7 @@ tag 전략:
 - `develop-latest`, `develop-<sha7>`
 - `main-latest`, `main-<sha7>`
 
-publish workflow는 `GITHUB_TOKEN`으로 GHCR에 login하며 `contents: read`, `packages: write`, `attestations: write`, `id-token: write` 권한만 사용한다. Buildx image build에는 `provenance: mode=max`와 `sbom: true`를 적용하고, GitHub image attestation과 image digest summary를 남긴다.
+publish workflow는 `GITHUB_TOKEN`으로 GHCR에 login하며 `contents: read`, `packages: write`, `attestations: write`, `id-token: write` 권한만 사용한다. Buildx image build에는 `provenance: mode=max`와 `sbom: true`를 적용하고, GitHub image attestation과 image digest summary를 남긴다. `actions/attest@v4`는 GHCR registry attestation을 push하지만, 개인 계정 repository 안전성을 위해 GitHub artifact storage record는 생성하지 않는다. Organization repository에서 storage record까지 사용하려면 `artifact-metadata: write` 권한과 `create-storage-record: true` 정책을 별도로 검토한다.
 
 `petnose-python-embed-real`은 real-model dependencies만 포함한다. dog-nose-identification2 checkpoint, Firebase credential, JWT secret, `.env`, `DOG_NOSE_MODEL_DIR_HOST` 같은 runtime/server-only 값은 image나 build args에 포함하지 않는다. 허용된 real build arg는 `INSTALL_REAL_MODEL_DEPS=1`뿐이다.
 

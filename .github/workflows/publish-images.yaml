@@ -119,6 +119,7 @@ jobs:
           subject-name: ghcr.io/${{ github.repository_owner }}/${{ matrix.image_suffix }}
           subject-digest: ${{ steps.build.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
 
       - name: Write image digest summary
         env:

@@ -241,6 +241,7 @@ GitHub Actions `ci.yaml`의 compose smoke는 이 mock/dev 경로만 검증합니
 | `<branch>-<sha>` | `develop-a1b2c3d` | 특정 커밋 고정 이미지 (7자리 SHA) |
 
 workflow summary에는 image digest, provenance/SBOM/attestation 적용 여부가 기록됩니다.
+`actions/attest@v4`는 GHCR registry attestation을 push하되, 개인 계정 repository 안전성을 위해 GitHub artifact storage record는 생성하지 않습니다. Organization repository에서 storage record까지 사용하려면 `artifact-metadata: write` 권한과 `create-storage-record: true` 정책을 별도로 검토합니다.
 `petnose-python-embed-real` 이미지는 real-model dependency만 포함하며 model checkpoint는 image에 포함하지 않습니다.
 checkpoint는 서버의 `DOG_NOSE_MODEL_DIR_HOST` 경로를 read-only mount합니다.
 
