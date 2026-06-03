@@ -378,6 +378,7 @@ public class AdoptionPostService {
 
     private void saveRequiredProfileImage(String dogId, MultipartFile profileImage) {
         FileStorageService.StoredFile stored = fileStorageService.storeProfileImage(dogId, profileImage);
+        fileStorageService.deleteOnTransactionRollback(stored);
         DogImage image = new DogImage();
         image.setDogId(dogId);
         image.setImageType(DogImageType.PROFILE);
