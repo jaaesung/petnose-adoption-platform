@@ -10,15 +10,23 @@
 
 - `POST /api/auth/register`
 - `POST /api/auth/login`
+- `POST /api/auth/password-reset/request`
+- `POST /api/auth/password-reset/confirm`
 - `GET /api/users/me`
 - `PATCH /api/users/me/profile`
+- `PATCH /api/users/me/profile-image`
+- `PATCH /api/users/me/password`
 - `POST /api/dogs/register`
 - `GET /api/dogs/me`
+- `GET /api/dogs/adopted/me`
 - `GET /api/dogs/{dog_id}`
 - `POST /api/adoption-posts`
 - `GET /api/adoption-posts`
 - `GET /api/adoption-posts/{post_id}`
 - `GET /api/adoption-posts/me`
+- `PUT /api/adoption-posts/{post_id}/like`
+- `DELETE /api/adoption-posts/{post_id}/like`
+- `GET /api/adoption-posts/liked/me`
 - `PATCH /api/adoption-posts/{post_id}/status`
 - `POST /api/adoption-posts/{post_id}/handover-verifications`
 
@@ -26,7 +34,7 @@
 
 - Flutter는 Spring Boot HTTP API만 호출한다.
 - active role은 `USER`, `ADMIN`뿐이다.
-- Firebase는 향후 선택적 chat/push 용도일 뿐 현재 백엔드 MVP 구현이 아니다.
+- Firebase chat/push는 optional communication layer이며 MySQL source of truth를 대체하지 않는다.
 - `POST /api/dogs/register`가 dog identity 등록, 비문 중복 검사, Qdrant upsert의 유일한 active entrypoint다.
 - dog nose v2에서는 dog 1개당 Qdrant `REFERENCE` point 5개와 `CENTROID` point 1개를 사용한다.
 - API flow의 안정 식별자는 `dog_id`이며, Qdrant point id는 내부 UUID다.
@@ -63,7 +71,7 @@
 | `GET /api/adoption-posts` | 불필요 | 없음 | optional `status`, `page`, `size` | public post list | `INVALID_POST_STATUS`, `INVALID_PAGE_REQUEST` | 공개 피드 |
 | `GET /api/adoption-posts/{post_id}` | 불필요 | 없음 | path `post_id` | public post detail | `POST_NOT_FOUND`, `POST_NOT_PUBLIC` | 공개 상세 |
 | `GET /api/adoption-posts/me` | 필요 | 없음 | optional owner `status`, `page`, `size` | owner post list | auth/page/status errors | 내 분양글 관리 |
-| `PATCH /api/adoption-posts/{post_id}/status` | 필요 | `application/json` | path `post_id`, body `status` | updated post status | `INVALID_STATUS_TRANSITION`, `DOG_ALREADY_HAS_ACTIVE_POST` 등 | 상태 변경 |
+| `PATCH /api/adoption-posts/{post_id}/status` | 필요 | `application/json` | path `post_id`, body `status`, `COMPLETED`일 때 `adopter_user_id` | updated post status, `adopter_user_id`, `adopted_at` | `INVALID_STATUS_TRANSITION`, `ADOPTER_REQUIRED`, `DOG_ALREADY_HAS_ACTIVE_POST` 등 | 상태 변경 |
 | `POST /api/adoption-posts/{post_id}/handover-verifications` | 필요 | `multipart/form-data` | path `post_id`, required `nose_image` | `post_id`, `expected_dog_id`, `matched`, `decision`, `similarity_score`, `message` | handover verification errors | 인도 시점 비문 확인 |
 
 ## 5. Flutter State Decisions
@@ -87,62 +95,35 @@
 
 ## 6. Schema/Migration Reminder
 
-- 최종 app table은 `users`, `dogs`, `dog_images`, `verification_logs`, `adoption_posts` 5개다.
-- V3는 historical migration으로 남아 있고, V4가 auxiliary table을 제거한다.
-- canonical schema/DBML에는 auxiliary table이 없어야 한다.
+- develop 제출 기준 MySQL table은 총 8개다.
+- Core domain/relationship table은 `users`, `dogs`, `dog_images`, `dog_nose_references`, `verification_logs`, `adoption_posts`, `adoption_post_likes` 7개다.
+- Auth support table은 `password_reset_tokens` 1개이며 domain table로 세지 않는다.
+- V3는 historical migration으로 남아 있고, V4가 auxiliary table을 제거한다. V5 이후 migration은 dog nose v2 references, user profile image, password reset, likes, adoption completion adopter fields를 추가한다.
+- canonical schema/DBML에는 `nose_verification_attempts`, `post_adoption_verifications`, 별도 handover table이 없어야 한다.
 
 ## 7. Real-model MVP E2E Smoke
 
-`scripts/verify-dog-id-centered-flow.ps1`는 빠른 static 문서/스키마, backend test/build, compose config 검증용이다. 실제 Docker runtime에서 회원가입부터 완료 처리까지 end-to-end로 확인할 때는 `scripts/verify-real-model-mvp-flow.ps1`를 사용한다.
+`scripts/verify-dog-id-centered-flow.ps1`는 빠른 static 문서/스키마, backend test/build, compose config 검증용이다. 실제 Docker runtime에서 회원가입부터 완료 처리까지 end-to-end로 확인할 때는 `docs/ops-evidence/dog-nose-v2-smoke-plan.md`의 active dog nose v2 기준을 따른다.
 
 전제:
 
 - Docker Desktop과 Docker Compose v2가 실행 중이어야 한다.
 - 실제 모델 모드는 `infra/docker/compose.yaml`, `infra/docker/compose.dev.yaml`, `infra/docker/compose.real-model.yaml` 조합을 사용한다.
-- `infra/docker/.env`가 있으면 스크립트가 compose 실행 시 함께 사용한다.
+- `infra/docker/.env`가 있으면 compose 실행 시 함께 사용될 수 있다.
 - Registration active contract는 비문 기준 사진 5장을 요구한다. Smoke/manual 검증도 같은 dog의 close-up cropped dog nose image 5장을 사용해야 한다. 임의 텍스트 파일은 사용하지 않는다.
 - Handover verification은 registration과 다르게 단건 `nose_image`를 사용한다.
-- `HandoverNoseImagePath`는 optional이다. 값을 넘기면 인도 시점 handover verification에서 별도 촬영 비문 이미지를 사용하고, 생략하면 `NoseImagePath`를 그대로 사용한다.
-- `ResetRuntime`은 PetNose compose project의 컨테이너/볼륨을 초기화하므로 로컬 dev 데이터 삭제를 의도할 때만 사용한다.
+- Qdrant collection은 `dog_nose_embeddings_real_v2`, vector dimension은 `2048`, distance는 `Cosine`이다.
+- Clean runtime 검증에서 reset 절차는 PetNose compose project의 컨테이너/볼륨을 초기화하므로 로컬 dev 데이터 삭제를 의도할 때만 사용한다.
 
-기본 실행 예시:
-
-```powershell
-pwsh ./scripts/verify-real-model-mvp-flow.ps1 -BaseUrl "http://localhost" -NoseImagePath "C:\path\to\nose.jpg"
-```
-
-compose 기동부터 clean runtime 검증까지 실행:
-
-```powershell
-pwsh ./scripts/verify-real-model-mvp-flow.ps1 -StartCompose -ResetRuntime -NoseImagePath "C:\path\to\nose.jpg"
-```
-
-등록 비문 사진과 인도 시점 비문 사진을 분리해 검증:
-
-```powershell
-pwsh ./scripts/verify-real-model-mvp-flow.ps1 `
-  -StartCompose `
-  -ResetRuntime `
-  -NoseImagePath "C:\Dev\sample\nose_test1.jpg" `
-  -HandoverNoseImagePath "C:\Dev\sample\nose_test2.jpg" `
-  -ProfileImagePath "C:\Dev\sample\nose_test1.jpg"
-```
-
-Qdrant collection 또는 BaseUrl override:
-
-```powershell
-pwsh ./scripts/verify-real-model-mvp-flow.ps1 -BaseUrl "http://localhost" -NoseImagePath ".\samples\nose.jpg" -QdrantCollection "dog_nose_embeddings_real_v2"
-```
-
-스크립트가 검증하는 핵심 flow:
+Dog nose v2 smoke가 검증하는 핵심 flow:
 
 - 회원가입, 로그인, Bearer JWT 기반 `/api/users/me`.
-- `/api/dogs/register` 정상 등록과 같은 reference image set 중복 등록 차단.
-- handover verification은 `HandoverNoseImagePath`가 있으면 별도 이미지로 expected dog와 비교한다.
+- `/api/dogs/register` 정상 등록과 같은 5장 reference set 중복 등록 차단.
+- handover verification은 registration과 다른 단건 `nose_image`를 expected dog와 비교한다.
 - 정상 dog의 `/api/adoption-posts` 생성과 duplicate suspected dog의 게시글 생성 차단.
 - 공개 분양글 list/detail의 `nose_image_url` 비노출.
 - handover verification의 `matched=true` 확인.
 - owner-only status update로 `COMPLETED` 전환 후 `POST_NOT_VERIFIABLE` 거부 확인.
 - `/files/{relative_path}` 정적 파일 접근 확인.
 - Qdrant 직접 point 조회가 가능한 환경에서는 정상 dog의 `REFERENCE`/`CENTROID` points 존재와 duplicate suspected dog point 부재 확인.
-- Docker MySQL direct check가 가능한 환경에서는 `dogs`, `verification_logs`, `adoption_posts`, `dog_images` 및 legacy precheck table 부재를 확인한다.
+- Docker MySQL direct check가 가능한 환경에서는 7개 core/relationship table, `password_reset_tokens` auth support table, 그리고 legacy precheck/post-adoption periodic table 부재를 확인한다.

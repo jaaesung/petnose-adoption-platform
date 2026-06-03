@@ -244,21 +244,13 @@ The fixture helper creates:
 
 Required image inputs:
 
-- a nose image for dog registration
+- five close-up cropped dog nose images for active dog nose v2 registration
 - a profile image for adoption post creation
 
 The generated output env file contains a Spring JWT for the inquirer user. Treat it as sensitive, keep it outside the repository, and do not commit it.
 By default, the output env file is written under the current user's temp directory. The helper rejects output env file paths inside the repository before creating any parent directory.
 
-Local example:
-
-```powershell
-.\scripts\prepare-firebase-chat-smoke-fixture.ps1 `
-  -BaseUrl "http://localhost:8080" `
-  -NoseImagePath "C:\Dev\sample\nose_test1.jpg" `
-  -ProfileImagePath "C:\Dev\sample\profile3.jpg" `
-  -RunSmoke
-```
+Local fixture creation should follow `docs/ops-evidence/dog-nose-v2-smoke-plan.md`: create a registered dog through `POST /api/dogs/register` with exactly five `nose_images`, then create the `OPEN` adoption post with a required `profile_image`.
 
 If dog registration returns `registration_allowed=false`, reset the disposable dev runtime/Qdrant data or use a different nose image before retrying. The author and inquirer are generated as different users, so the created `OPEN` post is owned by a different user than the smoke JWT holder. The helper does not query MySQL or Firestore directly; it only uses the public Spring APIs and lets the running backend own Firebase connectivity.
 

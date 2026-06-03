@@ -6,7 +6,7 @@
 
 Base URL: `http://<host>/api`
 
-이 문서는 current backend implementation에 맞춘 Flutter MVP flow를 기록한다. Firebase chat/push는 MySQL source of truth를 대체하지 않는 optional communication layer로만 다룬다. expanded profile table, report API, refresh token, non-canonical role concept은 추가하지 않는다.
+이 문서는 current backend implementation에 맞춘 Flutter MVP flow를 기록한다. Firebase chat/push는 MySQL source of truth를 대체하지 않는 optional communication layer로만 다룬다. expanded profile table, report/admin API, refresh token, reservation/payment/contract, post-adoption periodic verification, non-canonical role concept은 추가하지 않는다.
 
 ## Canonical Response Rules
 
@@ -24,7 +24,8 @@ Base URL: `http://<host>/api`
 ```
 
 - MVP role은 `USER`와 `ADMIN`만 사용한다.
-- `users`가 `display_name`, `contact_phone`, `region`, `is_active`를 직접 가진다.
+- develop 제출 기준 MySQL table은 7개 core/relationship table과 1개 auth support table(`password_reset_tokens`)을 합쳐 총 8개다.
+- `users`가 `display_name`, `contact_phone`, `region`, optional `profile_image_*`, `is_active`를 직접 가진다.
 - MySQL은 source of truth다. Qdrant는 nose embedding vector index일 뿐이다.
 - `dog_images.file_path`는 upload root 기준 상대 경로를 저장한다.
 - `qdrant_point_id`, `verification_status`, `embedding_status`는 API-calculated field이며 DB column이 아니다.
@@ -86,6 +87,9 @@ Excluded app-requested scope:
 - 입양 후 비문 인증 스케줄/기한/알림
 - 완료 후 자동 비문 재검증
 - `ADOPTER` role
+- `SHELTER` role
+- reports/admin dashboard
+- reservation/payment/contract
 - `dogs.owner_user_id`를 입양자로 변경하는 방식
 - Firebase로 MySQL domain data를 대체하는 구조
 

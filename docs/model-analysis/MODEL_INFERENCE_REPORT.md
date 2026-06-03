@@ -2,6 +2,8 @@
 
 작성일: 2026-05-24 KST
 
+> Historical note: this report records pre-dog-nose-v2 real-model inference evidence. Current active registration/Qdrant 기준은 `docs/PETNOSE_MVP_API_CONTRACT.md`, `docs/PETNOSE_MVP_FINAL_PROJECT_SPEC.md`, and `docs/PROJECT_KNOWLEDGE_INDEX.md`의 dog nose v2 기준을 따른다.
+
 ## 대상
 
 - PetNose repository: `C:\Dev\_petnose_fix`
