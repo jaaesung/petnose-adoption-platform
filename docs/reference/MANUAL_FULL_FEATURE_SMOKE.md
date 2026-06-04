@@ -22,6 +22,8 @@
 
 real-model Docker runtime에서는 `infra/docker/.env`를 실제 값으로 준비하고, 모델 checkpoint는 repository 밖 경로에 mount한다. SMTP와 Firebase는 optional이다.
 
+Firebase enabled chat까지 검증하려면 server runtime에는 Firebase service account JSON이 필요하다. Android/Flutter 앱용 `google-services.json`은 클라이언트 설정 파일이며, Spring server의 Firebase Admin 인증에는 사용하지 않는다. 예를 들어 service account는 `C:\Dev\secrets\petnose-firebase-service-account.json`처럼 repository 밖에 둔다.
+
 ## 기본 실행
 
 ```powershell
@@ -104,6 +106,8 @@ pwsh -NoProfile -File .\scripts\manual-full-feature-smoke.ps1 `
 
 `pwsh -File`로 다른 PowerShell process를 열어 실행할 때는 array parameter가 안전하게 전달되지 않을 수 있다. 그런 경우 위 예시처럼 `-ComposeFile ($ComposeFiles -join ";")` 또는 `-ComposeFile "infra/docker/compose.yaml;infra/docker/compose.dev.yaml;infra/docker/compose.real-model.yaml"`처럼 semicolon-separated string으로 넘긴다.
 
+`-ComposeFile $ComposeFiles`처럼 array를 그대로 넘기면 두 번째 compose 파일 값이 positional parameter로 흘러 `NoseImageExtension` validation 오류가 날 수 있다. `infra/docker/compose.dev.yaml`이 `auto,jpg,jpeg,png` 중 하나가 아니라는 오류가 보이면 compose 파일 목록을 semicolon-separated string으로 전달했는지 먼저 확인한다.
+
 ## Clean runtime 검증
 
 `-ResetRuntimeData`는 smoke 시작 전에 `docker compose -p <ComposeProjectName> ... down -v`를 실행한다. `-StartRuntime`은 이어서 `up -d --build`를 실행하고 Spring, Python Embed, Qdrant health가 준비될 때까지 기다린다. `-StopRuntimeAfter`는 성공/실패와 관계없이 끝에서 `down -v`를 실행한다.
@@ -164,20 +168,62 @@ enabled mode는 아래 환경이 준비된 runtime에서만 사용한다.
 
 - `FIREBASE_ENABLED=true`
 - `FIREBASE_PROJECT_ID`
-- `FIREBASE_CREDENTIALS_HOST_PATH` 또는 Firebase compose override
+- `FIREBASE_CREDENTIALS_HOST_PATH`
+- `infra/docker/compose.firebase.yaml` compose override
 - service account JSON은 repository 밖에 보관
-- 필요 시 `infra/docker/compose.firebase.yaml` 포함
+- `AUTH_PASSWORD_RESET_EMAIL_ENABLED=false` 또는 SMTP secret 준비
+
+Dedicated compose project에서 Firebase enabled chat까지 검증하는 예시는 아래와 같다. Host port `3306`이 이미 사용 중이면 temp env에서 `MYSQL_PORT=13306`처럼 다른 port를 지정한다.
 
 ```powershell
-pwsh ./scripts/manual-full-feature-smoke.ps1 `
+$SmokeDir = "C:\tmp\petnose-manual-full-smoke"
+$TempEnv = Join-Path $SmokeDir ".env"
+$ComposeFiles = @(
+  "infra/docker/compose.yaml",
+  "infra/docker/compose.dev.yaml",
+  "infra/docker/compose.real-model.yaml",
+  "infra/docker/compose.firebase.yaml",
+  "C:\tmp\petnose-manual-full-smoke\compose.qdrant-internal.yml"
+)
+
+pwsh -NoProfile -File .\scripts\manual-full-feature-smoke.ps1 `
+  -RootUrl "http://localhost:8088" `
+  -BaseUrl "http://localhost:8088/api" `
+  -QdrantUrl "http://localhost:16333" `
+  -PythonEmbedUrl "http://localhost:18000" `
   -NoseImageDir "C:\Users\jaesung\Desktop\dog_nose\ddubi" `
+  -PasswordResetMode skip `
   -FirebaseMode enabled `
-  -FcmToken "<local-test-fcm-token>"
+  -FcmToken "<local-test-fcm-token>" `
+  -RunReconciliation `
+  -WriteEvidence `
+  -WriteApiTranscript `
+  -ApiTranscriptDetail body `
+  -AllowAmbiguousHandover `
+  -ResetRuntimeData `
+  -StartRuntime `
+  -StopRuntimeAfter `
+  -EnvFile $TempEnv `
+  -ComposeProjectName "petnose_manual_smoke" `
+  -ComposeFile ($ComposeFiles -join ";") `
+  -QdrantCollection "dog_nose_embeddings_real_v2" `
+  -ExpectedVectorDimension 2048 `
+  -ExpectedDistance "Cosine"
 ```
 
 `FcmToken`을 생략하면 placeholder token을 사용한다. 이 경우 FCM token 저장 API까지 검증하지만 실제 push delivery는 검증하지 않는다.
 
-Evidence에는 Firebase custom token, FCM token, service account path/content를 저장하지 않는다.
+`-FirebaseMode enabled`에서는 Firebase disabled 응답을 성공으로 취급하지 않는다. `/api/firebase/custom-token`이 `FIREBASE_DISABLED`를 반환하면 enabled smoke는 실패해야 한다.
+
+Firestore Console에서 side effect를 확인할 때는 다음 collection path를 보면 된다.
+
+- 채팅방: `chat_rooms/{room_id}`
+- 메시지: `chat_rooms/{room_id}/messages/{message_id}`
+- FCM 토큰: `user_devices/{firebase_uid}/tokens/{tokenHash}`
+
+기본 transcript는 fixture ID도 redaction한다. Firestore Console 조회를 위해 local-only evidence에 ID가 필요하면 별도 실행에서 `-ShowFixtureIds`와 별도 `-ApiTranscriptPath`/`-ApiTranscriptJsonPath`를 사용한다. `-ShowFixtureIds`를 켜도 Firebase custom token, FCM token, password, reset token은 항상 redaction된다.
+
+Evidence에는 Firebase custom token, FCM token, service account path/content를 저장하지 않는다. Service account JSON과 `.env`는 커밋하지 않는다.
 
 ## Password reset 테스트
 
