@@ -43,6 +43,10 @@ pwsh ./scripts/manual-full-feature-smoke.ps1 `
 - `HandoverImageIndex`: `6`
 - `OutputDir`: `docs/ops-evidence/manual-full-feature-smoke-local`
 - `SummaryPath`: `docs/ops-evidence/manual-full-feature-smoke-local/summary.json`
+- `ApiTranscriptPath`: `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.md`
+- `ApiTranscriptJsonPath`: `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.json`
+- `ApiTranscriptDetail`: `body`
+- `ComposeProjectName`: `petnose`
 
 `manual-full-feature-smoke-local/` 디렉터리는 gitignore 대상이다.
 
@@ -64,6 +68,8 @@ services:
 그 다음 아래처럼 실행한다.
 
 ```powershell
+$SmokeDir = "C:\tmp\petnose-manual-full-smoke"
+$TempEnv = Join-Path $SmokeDir ".env"
 $ComposeFiles = @(
   "infra/docker/compose.yaml",
   "infra/docker/compose.dev.yaml",
@@ -71,7 +77,7 @@ $ComposeFiles = @(
   "C:\tmp\petnose-manual-full-smoke\compose.qdrant-internal.yml"
 )
 
-pwsh ./scripts/manual-full-feature-smoke.ps1 `
+pwsh -NoProfile -File .\scripts\manual-full-feature-smoke.ps1 `
   -RootUrl "http://localhost:8088" `
   -BaseUrl "http://localhost:8088/api" `
   -QdrantUrl "http://localhost:16333" `
@@ -81,16 +87,53 @@ pwsh ./scripts/manual-full-feature-smoke.ps1 `
   -FirebaseMode auto `
   -RunReconciliation `
   -WriteEvidence `
+  -WriteApiTranscript `
+  -PrintApiTranscript `
+  -ApiTranscriptDetail body `
   -AllowAmbiguousHandover `
-  -EnvFile "C:\tmp\petnose-manual-full-smoke\.env" `
+  -ResetRuntimeData `
+  -StartRuntime `
+  -StopRuntimeAfter `
+  -EnvFile $TempEnv `
   -ComposeProjectName "petnose_manual_smoke" `
-  -ComposeFile $ComposeFiles `
+  -ComposeFile ($ComposeFiles -join ";") `
   -MysqlService "mysql"
 ```
 
-`ComposeProjectName`을 생략하면 기존 compose 기본 project 동작을 유지한다. 값을 넘기면 script의 MySQL side-effect check와 reconciliation 호출이 모두 `docker compose -p <name>`을 사용한다.
+`manual-full-feature-smoke.ps1`의 `ComposeProjectName` 기본값은 `petnose`다. Dedicated 검증에서는 반드시 `petnose_manual_smoke`처럼 별도 project name을 넘겨 기존 로컬 stack과 볼륨을 분리한다. Script가 실행하는 compose lifecycle, MySQL side-effect check, reconciliation 호출은 모두 `docker compose -p <ComposeProjectName>` 기준으로 동작한다. `check-qdrant-reference-consistency.ps1`는 독립 실행 시 기존처럼 `ComposeProjectName`을 생략할 수 있고, smoke script가 호출할 때는 동일한 project name을 전달한다.
 
-`pwsh -File`로 다른 PowerShell process를 열어 실행할 때는 array parameter가 안전하게 전달되지 않을 수 있다. 그런 경우 `-ComposeFile "infra/docker/compose.yaml;infra/docker/compose.dev.yaml;infra/docker/compose.real-model.yaml"`처럼 semicolon-separated string으로 넘기거나, 예시처럼 같은 `pwsh` process 안에서 `$ComposeFiles` 배열을 만든 뒤 script를 호출한다.
+`pwsh -File`로 다른 PowerShell process를 열어 실행할 때는 array parameter가 안전하게 전달되지 않을 수 있다. 그런 경우 위 예시처럼 `-ComposeFile ($ComposeFiles -join ";")` 또는 `-ComposeFile "infra/docker/compose.yaml;infra/docker/compose.dev.yaml;infra/docker/compose.real-model.yaml"`처럼 semicolon-separated string으로 넘긴다.
+
+## Clean runtime 검증
+
+`-ResetRuntimeData`는 smoke 시작 전에 `docker compose -p <ComposeProjectName> ... down -v`를 실행한다. `-StartRuntime`은 이어서 `up -d --build`를 실행하고 Spring, Python Embed, Qdrant health가 준비될 때까지 기다린다. `-StopRuntimeAfter`는 성공/실패와 관계없이 끝에서 `down -v`를 실행한다.
+
+Clean run은 smoke fixture를 만들기 전에 아래 값을 확인하고 summary에 기록한다.
+
+- MySQL: `users`, `dogs`, `dog_images`, `dog_nose_references`, `verification_logs`, `adoption_posts`, `adoption_post_likes`
+- Qdrant: `is_active=true` point count
+
+각 값은 `0`이어야 한다. 초기 `dogs` 또는 Qdrant active point가 남아 있으면 fixture 중복/오염 가능성이 있으므로 실패한다. Dedicated project에서만 `-ResetRuntimeData`를 사용하는 것을 권장한다.
+
+## API transcript mode
+
+`-PrintApiTranscript`는 각 scenario가 끝날 때 sanitized API transcript를 console에 출력한다. `-WriteApiTranscript`는 아래 파일을 생성한다.
+
+- `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.md`
+- `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.json`
+
+JSON transcript는 API 호출별 array이며 각 item은 다음 shape를 가진다.
+
+- `index`, `scenario`, `name`, `method`, `url`, `path`
+- `auth`: bearer token 사용 여부
+- `request`: `content_type`, sanitized `body`/`fields`, multipart `files` (`basename`, `size_bytes`, `sha256`, `content_type`), full mode의 `curl`
+- `response`: `status`, sanitized `body`
+- `assertions`: `status`, `description`, `expected`, `actual`
+- `result`: `PASS`, `SKIP`, `EXPECTED_DISABLED`, `FAIL`
+
+`-ApiTranscriptDetail summary`는 method/path/status/assertion 중심으로 기록한다. `body`는 sanitized request summary와 response body를 포함한다. `full`은 `body`에 sanitized curl-style request 예시를 추가한다. `-MaxTranscriptBodyChars`는 request/response body text를 제한한다.
+
+기본적으로 transcript는 fixture ID 성격의 `user_id`, `dog_id`, `post_id`, `room_id`, `message_id`를 redaction한다. `-ShowFixtureIds`를 켜면 fixture ID는 보이지만 JWT, password/current password/new password, reset token, Firebase custom token, FCM token은 항상 redaction된다. Raw image content, vector, full Qdrant payload는 기록하지 않는다.
 
 ## ddubi 예시
 
@@ -167,6 +210,11 @@ Duplicate suspected가 발생하면 같은 nose fixture가 이미 같은 runtime
 - `docs/ops-evidence/manual-full-feature-smoke-local/summary.md`
 - reconciliation 실행 시 `docs/ops-evidence/manual-full-feature-smoke-local/reconciliation-summary.json`
 
+`-WriteApiTranscript`를 사용하면 아래 파일을 추가 생성한다.
+
+- `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.md`
+- `docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.json`
+
 저장하는 항목:
 
 - checked time
@@ -175,6 +223,8 @@ Duplicate suspected가 발생하면 같은 nose fixture가 이미 같은 runtime
 - fixture basename/count/SHA-256 hash
 - scenario PASS/SKIP/FAIL
 - ID present marker
+- 초기 DB row count와 Qdrant active point count
+- sanitized API method/path/status/request/response/assertion transcript
 - sanitized reconciliation counts
 
 저장하지 않는 항목:
@@ -189,6 +239,7 @@ Duplicate suspected가 발생하면 같은 nose fixture가 이미 같은 runtime
 - raw vector
 - full Qdrant payload dump
 - `.env` 내용
+- `-ShowFixtureIds`가 없을 때 fixture `user_id`/`dog_id`/`post_id`/`room_id`/`message_id`
 
 ## 보안 주의
 
@@ -211,8 +262,18 @@ Duplicate suspected가 발생하면 같은 nose fixture가 이미 같은 runtime
 | `FirebaseMode` | `skip`, `disabled`, `enabled`, `auto` |
 | `RunReconciliation` | Qdrant/MySQL 정합성 점검 실행 여부 |
 | `WriteEvidence` | sanitized summary JSON/Markdown 저장 |
+| `PrintApiTranscript` | sanitized API transcript를 console에 출력 |
+| `WriteApiTranscript` | sanitized API transcript Markdown/JSON 저장 |
+| `ApiTranscriptPath` | transcript Markdown 출력 경로 |
+| `ApiTranscriptJsonPath` | transcript JSON 출력 경로 |
+| `ApiTranscriptDetail` | `summary`, `body`, `full` |
+| `MaxTranscriptBodyChars` | transcript body 최대 문자 수 |
+| `ShowFixtureIds` | fixture ID redaction 해제. token/password 계열은 항상 redaction |
 | `StopOnOptionalFailure` | optional Firebase/DB side-effect 실패도 전체 실패로 처리 |
 | `AllowAmbiguousHandover` | handover `AMBIGUOUS`를 warning pass로 허용 |
+| `ResetRuntimeData` | 시작 전 dedicated compose project를 `down -v`로 초기화 |
+| `StartRuntime` | 시작 전 compose runtime을 `up -d --build`로 실행 |
+| `StopRuntimeAfter` | 종료 시 compose runtime을 `down -v`로 정리 |
 | `ComposeProjectName` | dedicated compose project의 MySQL/reconciliation 조회에 사용할 project name |
 
 자세한 사용법은 다음 명령으로 확인한다.

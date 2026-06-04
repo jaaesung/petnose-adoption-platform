@@ -68,9 +68,20 @@ param(
 
     [string]$OutputDir = "docs/ops-evidence/manual-full-feature-smoke-local",
     [string]$SummaryPath = "docs/ops-evidence/manual-full-feature-smoke-local/summary.json",
+    [switch]$PrintApiTranscript,
+    [switch]$WriteApiTranscript,
+    [string]$ApiTranscriptPath = "docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.md",
+    [string]$ApiTranscriptJsonPath = "docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.json",
+    [ValidateSet("summary", "body", "full")]
+    [string]$ApiTranscriptDetail = "body",
+    [int]$MaxTranscriptBodyChars = 12000,
+    [switch]$ShowFixtureIds,
 
     [switch]$StopOnOptionalFailure,
     [switch]$AllowAmbiguousHandover,
+    [switch]$ResetRuntimeData,
+    [switch]$StartRuntime,
+    [switch]$StopRuntimeAfter,
 
     [string]$QdrantCollection = "dog_nose_embeddings_real_v2",
     [int]$ExpectedVectorDimension = 2048,
@@ -80,7 +91,7 @@ param(
     [string[]]$ComposeFile = @("infra/docker/compose.yaml", "infra/docker/compose.dev.yaml"),
     [AllowNull()]
     [AllowEmptyString()]
-    [string]$ComposeProjectName = "",
+    [string]$ComposeProjectName = "petnose",
     [string]$MysqlService = "mysql",
     [AllowNull()]
     [AllowEmptyString()]
@@ -139,6 +150,11 @@ $script:PostId = $null
 $script:OwnerNoseImageUrl = ""
 $script:PostProfileImageUrl = ""
 $script:ChatRoomId = ""
+$script:ApiTranscript = New-Object 'System.Collections.Generic.List[object]'
+$script:ApiTranscriptCounter = 0
+$script:CurrentScenarioName = ""
+$script:CurrentApiRecord = $null
+$script:RuntimeStartedByScript = $false
 
 $script:Summary = [ordered]@{
     checked_at = $script:StartedAt.ToString("o")
@@ -155,6 +171,11 @@ $script:Summary = [ordered]@{
         run_reconciliation = [bool]$RunReconciliation
         allow_ambiguous_handover = [bool]$AllowAmbiguousHandover
         compose_project_name = if ([string]::IsNullOrWhiteSpace($ComposeProjectName)) { "default" } else { $ComposeProjectName }
+        api_transcript_detail = $ApiTranscriptDetail
+        show_fixture_ids = [bool]$ShowFixtureIds
+        reset_runtime_data = [bool]$ResetRuntimeData
+        start_runtime = [bool]$StartRuntime
+        stop_runtime_after = [bool]$StopRuntimeAfter
     }
     scenarios = [ordered]@{}
     markers = [ordered]@{}
@@ -195,7 +216,11 @@ Defaults:
   -RunReconciliation             true
   -OutputDir                     docs/ops-evidence/manual-full-feature-smoke-local
   -SummaryPath                   docs/ops-evidence/manual-full-feature-smoke-local/summary.json
-  -ComposeProjectName            optional docker compose project name for DB/reconciliation
+  -ApiTranscriptPath             docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.md
+  -ApiTranscriptJsonPath         docs/ops-evidence/manual-full-feature-smoke-local/api-transcript.json
+  -ApiTranscriptDetail           body
+  -MaxTranscriptBodyChars        12000
+  -ComposeProjectName            petnose
 
 Modes:
   -PasswordResetMode skip|dev-exposed|email
@@ -203,10 +228,17 @@ Modes:
 
 Evidence:
   -WriteEvidence                 Write sanitized summary.json and summary.md
+  -PrintApiTranscript            Print sanitized API transcript to console
+  -WriteApiTranscript            Write sanitized API transcript markdown/json
+  -ApiTranscriptDetail summary|body|full
+  -ShowFixtureIds                Include fixture user/dog/post IDs in transcript
 
 Optional behavior:
   -StopOnOptionalFailure         Treat optional Firebase/DB side-effect failures as fatal
   -AllowAmbiguousHandover        Accept AMBIGUOUS as warning-pass for handover
+  -ResetRuntimeData              Run docker compose down -v before the smoke
+  -StartRuntime                  Run docker compose up -d --build before the smoke
+  -StopRuntimeAfter              Run docker compose down -v after the smoke
   -RunReconciliation:`$false      Skip Qdrant/MySQL reconciliation
 
 Exit codes:
@@ -280,6 +312,9 @@ function Test-SensitiveName {
     param([Parameter(Mandatory = $true)][string]$Name)
 
     $normalized = $Name.ToLowerInvariant()
+    if ($normalized -match "(password|token|authorization|credential|secret)") {
+        return $true
+    }
     $sensitiveNames = @(
         "access_token",
         "authorization",
@@ -301,6 +336,42 @@ function Test-SensitiveName {
     return $sensitiveNames -contains $normalized
 }
 
+function Test-FixtureIdName {
+    param([Parameter(Mandatory = $true)][string]$Name)
+
+    $normalized = $Name.ToLowerInvariant().Replace(".", "_")
+    return $normalized -match "(^|_)(user_id|owner_user_id|adopter_user_id|author_user_id|inquirer_user_id|dog_id|expected_dog_id|post_id|adoption_post_id|room_id|message_id)$"
+}
+
+function Redact-FixtureIdsInText {
+    param([AllowNull()][string]$Text)
+
+    if ($null -eq $Text) {
+        return ""
+    }
+
+    $result = Redact-Text $Text
+    if ($ShowFixtureIds) {
+        return $result
+    }
+
+    foreach ($id in @($script:DogId, $script:ChatRoomId)) {
+        $idText = [string]$id
+        if (-not [string]::IsNullOrWhiteSpace($idText) -and $idText.Length -ge 8) {
+            $result = $result.Replace($idText, "[REDACTED_FIXTURE_ID]")
+        }
+    }
+    $result = $result -replace '(?i)(/dogs/)(?!adopted(?:/|$)|me(?:/|$)|register(?:/|$))[^/?\s"]+', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)(/adoption-posts/)(?:\d+|[0-9a-f-]{8,})', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)(/chat/rooms/)[^/?\s"]+', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)(/files/users/)(?:\d+|[0-9a-f-]{8,})', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)(/files/dogs/)(?:\d+|[0-9a-f-]{8,})', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)([?&](?:user_id|owner_user_id|adopter_user_id|author_user_id|inquirer_user_id|dog_id|expected_dog_id|post_id|room_id|message_id)=)[^&\s"]+', '$1[REDACTED_FIXTURE_ID]'
+    $result = $result -replace '(?i)("(?:user_id|owner_user_id|adopter_user_id|author_user_id|inquirer_user_id|dog_id|expected_dog_id|post_id|room_id|message_id)"\s*:\s*)"[^"]+"', '$1"[REDACTED_FIXTURE_ID]"'
+    $result = $result -replace '(?i)("(?:user_id|owner_user_id|adopter_user_id|author_user_id|inquirer_user_id|dog_id|expected_dog_id|post_id|room_id|message_id)"\s*:\s*)\d+', '$1"[REDACTED_FIXTURE_ID]"'
+    return $result
+}
+
 function ConvertTo-SafeEvidenceValue {
     param(
         [AllowNull()][object]$Value,
@@ -309,7 +380,10 @@ function ConvertTo-SafeEvidenceValue {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($Name) -and (Test-SensitiveName -Name $Name)) {
-        return "[REDACTED]"
+        if ($Value -is [string] -or $null -eq $Value) {
+            return "[REDACTED]"
+        }
+        return $Value
     }
     if (-not [string]::IsNullOrWhiteSpace($Name) -and $Name -match "(?i)^(vector|payload)$") {
         return "[OMITTED]"
@@ -353,6 +427,70 @@ function ConvertTo-SafeEvidenceValue {
     return $object
 }
 
+function ConvertTo-TranscriptSafeValue {
+    param(
+        [AllowNull()][object]$Value,
+        [string]$Name = "",
+        [int]$Depth = 0
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($Name) -and (Test-SensitiveName -Name $Name)) {
+        if ($Value -is [string] -or $null -eq $Value) {
+            return "[REDACTED]"
+        }
+        return $Value
+    }
+    if (-not $ShowFixtureIds -and -not [string]::IsNullOrWhiteSpace($Name) -and (Test-FixtureIdName -Name $Name)) {
+        if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) {
+            return $null
+        }
+        if ([string]$Value -in @("absent", "present", "non-empty")) {
+            return $Value
+        }
+        return "[REDACTED_FIXTURE_ID]"
+    }
+    if (-not [string]::IsNullOrWhiteSpace($Name) -and $Name -match "(?i)^(vector|payload)$") {
+        return "[OMITTED]"
+    }
+    if ($null -eq $Value) {
+        return $null
+    }
+    if ($Depth -gt 12) {
+        return "[MAX_DEPTH]"
+    }
+    if ($Value -is [string]) {
+        return Redact-FixtureIdsInText $Value
+    }
+    if ($Value.GetType().IsPrimitive -or $Value -is [decimal] -or $Value -is [datetime]) {
+        return $Value
+    }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $safe = [ordered]@{}
+        foreach ($key in $Value.Keys) {
+            $safe[[string]$key] = ConvertTo-TranscriptSafeValue -Value $Value[$key] -Name ([string]$key) -Depth ($Depth + 1)
+        }
+        return $safe
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $items = @()
+        foreach ($item in $Value) {
+            $items += ConvertTo-TranscriptSafeValue -Value $item -Depth ($Depth + 1)
+        }
+        return $items
+    }
+
+    $object = [ordered]@{}
+    foreach ($property in $Value.PSObject.Properties) {
+        if ($property.MemberType -in @(
+                [System.Management.Automation.PSMemberTypes]::NoteProperty,
+                [System.Management.Automation.PSMemberTypes]::Property
+            )) {
+            $object[$property.Name] = ConvertTo-TranscriptSafeValue -Value $property.Value -Name $property.Name -Depth ($Depth + 1)
+        }
+    }
+    return $object
+}
+
 function ConvertTo-JsonText {
     param([AllowNull()][object]$Value)
 
@@ -360,6 +498,453 @@ function ConvertTo-JsonText {
         return ""
     }
     return ($Value | ConvertTo-Json -Depth 80)
+}
+
+function Limit-TranscriptText {
+    param([AllowNull()][string]$Text)
+
+    if ($null -eq $Text) {
+        return ""
+    }
+
+    $safeText = Redact-FixtureIdsInText $Text
+    if ($MaxTranscriptBodyChars -gt 0 -and $safeText.Length -gt $MaxTranscriptBodyChars) {
+        return "$($safeText.Substring(0, $MaxTranscriptBodyChars))`n[TRUNCATED $($safeText.Length - $MaxTranscriptBodyChars) chars]"
+    }
+    return $safeText
+}
+
+function ConvertTo-TranscriptJsonText {
+    param([AllowNull()][object]$Value)
+
+    return Limit-TranscriptText (ConvertTo-JsonText (ConvertTo-TranscriptSafeValue -Value $Value))
+}
+
+function ConvertTo-TranscriptResponseBody {
+    param(
+        [AllowNull()][object]$Json,
+        [AllowNull()][string]$BodyText
+    )
+
+    if ($null -ne $Json) {
+        return ConvertTo-TranscriptSafeValue -Value $Json
+    }
+    return Limit-TranscriptText $BodyText
+}
+
+function Test-OmitRawResponseBody {
+    param(
+        [Parameter(Mandatory = $true)][string]$Url,
+        [AllowNull()][AllowEmptyString()][string]$ContentType = ""
+    )
+
+    if ($ContentType -match "(?i)^(image/|application/octet-stream)") {
+        return $true
+    }
+    try {
+        $uri = [System.Uri]$Url
+        if ($uri.AbsolutePath -match "(?i)^/files/") {
+            return $true
+        }
+    } catch {
+        if ($Url -match "(?i)/files/") {
+            return $true
+        }
+    }
+    return $false
+}
+
+function Get-TranscriptPath {
+    param([Parameter(Mandatory = $true)][string]$Url)
+
+    $safeUrl = Redact-FixtureIdsInText $Url
+    try {
+        $uri = [System.Uri]$safeUrl
+        return "$($uri.AbsolutePath)$($uri.Query)"
+    } catch {
+        return $safeUrl
+    }
+}
+
+function New-TranscriptCurl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Method,
+        [Parameter(Mandatory = $true)][string]$Url,
+        [AllowNull()][AllowEmptyString()][string]$ContentType = "",
+        [AllowNull()][object]$BodyObject = $null,
+        [AllowNull()][hashtable]$Fields = $null,
+        [AllowNull()][object[]]$Files = @(),
+        [bool]$Authenticated = $false
+    )
+
+    if ($ApiTranscriptDetail -ne "full") {
+        return $null
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    $parts.Add("curl") | Out-Null
+    $parts.Add("-X") | Out-Null
+    $parts.Add($Method.ToUpperInvariant()) | Out-Null
+    $parts.Add("'$(Redact-FixtureIdsInText $Url)'") | Out-Null
+    $parts.Add("-H 'Accept: application/json'") | Out-Null
+    if ($Authenticated) {
+        $parts.Add("-H 'Authorization: Bearer [REDACTED]'") | Out-Null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ContentType)) {
+        $parts.Add("-H 'Content-Type: $ContentType'") | Out-Null
+    }
+    if ($null -ne $BodyObject) {
+        $json = (ConvertTo-TranscriptJsonText -Value $BodyObject).Replace("'", "'\''")
+        $parts.Add("--data '$json'") | Out-Null
+    }
+    if ($null -ne $Fields) {
+        foreach ($key in ($Fields.Keys | Sort-Object)) {
+            if ($null -eq $Fields[$key]) {
+                continue
+            }
+            $value = ConvertTo-TranscriptSafeValue -Value $Fields[$key] -Name ([string]$key)
+            $parts.Add("-F '$key=$value'") | Out-Null
+        }
+    }
+    foreach ($file in @($Files)) {
+        $path = [string](Get-PropertyValue -Object $file -Name "Path")
+        $fieldName = [string](Get-PropertyValue -Object $file -Name "FieldName")
+        $parts.Add("-F '$fieldName=@$([System.IO.Path]::GetFileName($path))'") | Out-Null
+    }
+    return ($parts -join " ")
+}
+
+function New-ApiTranscriptRecord {
+    param(
+        [Parameter(Mandatory = $true)][string]$Method,
+        [Parameter(Mandatory = $true)][string]$Url,
+        [AllowNull()][AllowEmptyString()][string]$ContentType = "",
+        [AllowNull()][object]$RequestBody = $null,
+        [AllowNull()][hashtable]$Fields = $null,
+        [AllowNull()][object[]]$Files = @(),
+        [bool]$Authenticated = $false
+    )
+
+    $script:ApiTranscriptCounter += 1
+    $request = [ordered]@{
+        content_type = if ([string]::IsNullOrWhiteSpace($ContentType)) { $null } else { $ContentType }
+        body = $null
+        fields = $null
+        files = @()
+        curl = $null
+    }
+    if ($ApiTranscriptDetail -in @("body", "full")) {
+        if ($null -ne $RequestBody) {
+            $request["body"] = ConvertTo-TranscriptSafeValue -Value $RequestBody
+        }
+        if ($null -ne $Fields) {
+            $safeFields = [ordered]@{}
+            foreach ($key in ($Fields.Keys | Sort-Object)) {
+                $safeFields[[string]$key] = ConvertTo-TranscriptSafeValue -Value $Fields[$key] -Name ([string]$key)
+            }
+            $request["fields"] = $safeFields
+        }
+        $safeFiles = @()
+        foreach ($file in @($Files)) {
+            $path = [string](Get-PropertyValue -Object $file -Name "Path")
+            $fieldName = [string](Get-PropertyValue -Object $file -Name "FieldName")
+            $mimeType = [string](Get-PropertyValue -Object $file -Name "MimeType")
+            if ([string]::IsNullOrWhiteSpace($mimeType)) {
+                $mimeType = Get-ImageMimeType -Path $path
+            }
+            $fileEvidence = Get-FileEvidence -Path $path
+            $safeFiles += [ordered]@{
+                field = $fieldName
+                basename = $fileEvidence.basename
+                size_bytes = $fileEvidence.size_bytes
+                sha256 = $fileEvidence.sha256
+                content_type = $mimeType
+            }
+        }
+        $request["files"] = $safeFiles
+    }
+    if ($ApiTranscriptDetail -eq "full") {
+        $request["curl"] = New-TranscriptCurl -Method $Method -Url $Url -ContentType $ContentType -BodyObject $RequestBody -Fields $Fields -Files $Files -Authenticated $Authenticated
+    }
+
+    $record = [ordered]@{
+        index = $script:ApiTranscriptCounter
+        scenario = if ([string]::IsNullOrWhiteSpace($script:CurrentScenarioName)) { "unscoped" } else { $script:CurrentScenarioName }
+        name = "$($Method.ToUpperInvariant()) $(Get-TranscriptPath -Url $Url)"
+        method = $Method.ToUpperInvariant()
+        url = Redact-FixtureIdsInText $Url
+        path = Get-TranscriptPath -Url $Url
+        auth = [ordered]@{
+            bearer = [bool]$Authenticated
+        }
+        request = $request
+        response = [ordered]@{
+            status = $null
+            body = $null
+        }
+        assertions = New-Object 'System.Collections.Generic.List[object]'
+        result = "PASS"
+        _printed = $false
+    }
+    $script:ApiTranscript.Add($record) | Out-Null
+    $script:CurrentApiRecord = $record
+    return $record
+}
+
+function Complete-ApiTranscriptResponse {
+    param(
+        [Parameter(Mandatory = $true)][object]$Record,
+        [AllowNull()][Nullable[int]]$StatusCode = $null,
+        [AllowNull()][object]$Json = $null,
+        [AllowNull()][string]$BodyText = ""
+    )
+
+    $Record["response"]["status"] = $StatusCode
+    if ($ApiTranscriptDetail -in @("body", "full")) {
+        $Record["response"]["body"] = ConvertTo-TranscriptResponseBody -Json $Json -BodyText $BodyText
+    }
+}
+
+function Add-ApiAssertion {
+    param(
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][string]$Status,
+        [AllowNull()][object]$Expected = $null,
+        [AllowNull()][object]$Actual = $null
+    )
+
+    if ($null -eq $script:CurrentApiRecord) {
+        return
+    }
+
+    $assertion = [ordered]@{
+        status = $Status
+        description = Redact-FixtureIdsInText $Description
+        expected = ConvertTo-TranscriptSafeValue -Value $Expected -Name $Description
+        actual = ConvertTo-TranscriptSafeValue -Value $Actual -Name $Description
+    }
+    $script:CurrentApiRecord["assertions"].Add($assertion) | Out-Null
+    if ($Status -eq "FAIL") {
+        $script:CurrentApiRecord["result"] = "FAIL"
+    }
+}
+
+function Set-CurrentApiResult {
+    param([Parameter(Mandatory = $true)][string]$Result)
+
+    if ($null -ne $script:CurrentApiRecord) {
+        $script:CurrentApiRecord["result"] = $Result
+    }
+}
+
+function ConvertTo-PublicApiTranscriptRecord {
+    param([Parameter(Mandatory = $true)][object]$Record)
+
+    $copy = [ordered]@{}
+    foreach ($key in $Record.Keys) {
+        if (-not ([string]$key).StartsWith("_")) {
+            $copy[$key] = $Record[$key]
+        }
+    }
+    return $copy
+}
+
+function Get-TranscriptRecordValue {
+    param(
+        [AllowNull()][object]$Object,
+        [Parameter(Mandatory = $true)][string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+    if ($Object -is [System.Collections.DictionaryEntry]) {
+        return Get-TranscriptRecordValue -Object $Object.Value -Name $Name
+    }
+    if ($Object -is [System.Collections.IDictionary]) {
+        return $Object[$Name]
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
+function Get-TranscriptRecordItems {
+    param([AllowNull()][object]$Value)
+
+    if ($null -eq $Value) {
+        return @()
+    }
+    if ($Value -is [string]) {
+        return @($Value)
+    }
+    if ($Value -is [System.Collections.IDictionary]) {
+        return @($Value)
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        $items = @()
+        foreach ($item in $Value) {
+            $items += $item
+        }
+        return $items
+    }
+    return @($Value)
+}
+
+function Format-ApiTranscriptRecord {
+    param([Parameter(Mandatory = $true)][object]$Record)
+
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $requestRecord = Get-TranscriptRecordValue -Object $Record -Name "request"
+    $responseRecord = Get-TranscriptRecordValue -Object $Record -Name "response"
+    $authRecord = Get-TranscriptRecordValue -Object $Record -Name "auth"
+    $index = Get-TranscriptRecordValue -Object $Record -Name "index"
+    $scenario = Get-TranscriptRecordValue -Object $Record -Name "scenario"
+    $result = Get-TranscriptRecordValue -Object $Record -Name "result"
+    $method = Get-TranscriptRecordValue -Object $Record -Name "method"
+    $path = Get-TranscriptRecordValue -Object $Record -Name "path"
+    $authLabel = if (Get-TranscriptRecordValue -Object $authRecord -Name "bearer") { "bearer" } else { "none" }
+    $contentTypeValue = Get-TranscriptRecordValue -Object $requestRecord -Name "content_type"
+    $contentType = if ($null -ne $contentTypeValue) { $contentTypeValue } else { "none" }
+    $status = Get-TranscriptRecordValue -Object $responseRecord -Name "status"
+    $lines.Add(("### API {0} - {1}" -f $index, $scenario)) | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add(("- Result: {0}" -f $result)) | Out-Null
+    $lines.Add(('- Request: `{0} {1}`' -f $method, $path)) | Out-Null
+    $lines.Add(("- Auth: {0}" -f $authLabel)) | Out-Null
+    $lines.Add(("- Content-Type: {0}" -f $contentType)) | Out-Null
+    $lines.Add(("- Response: {0}" -f $status)) | Out-Null
+    if ($ApiTranscriptDetail -in @("body", "full")) {
+        $requestBody = Get-TranscriptRecordValue -Object $requestRecord -Name "body"
+        $requestFields = Get-TranscriptRecordValue -Object $requestRecord -Name "fields"
+        $requestFiles = Get-TranscriptRecordItems -Value (Get-TranscriptRecordValue -Object $requestRecord -Name "files")
+        if ($null -ne $requestBody -or $null -ne $requestFields -or @($requestFiles).Count -gt 0) {
+            $lines.Add("") | Out-Null
+            $lines.Add("Request summary:") | Out-Null
+            $lines.Add("") | Out-Null
+            $lines.Add('```json') | Out-Null
+            $requestSummary = [ordered]@{
+                body = $requestBody
+                fields = $requestFields
+                files = $requestFiles
+            }
+            $requestSummaryJson = ConvertTo-JsonText -Value $requestSummary
+            $lines.Add((Limit-TranscriptText -Text $requestSummaryJson)) | Out-Null
+            $lines.Add('```') | Out-Null
+        }
+        $responseBody = Get-TranscriptRecordValue -Object $responseRecord -Name "body"
+        if ($null -ne $responseBody) {
+            $lines.Add("") | Out-Null
+            $lines.Add("Response body:") | Out-Null
+            $lines.Add("") | Out-Null
+            $lines.Add('```json') | Out-Null
+            $responseBodyJson = ConvertTo-JsonText -Value $responseBody
+            $lines.Add((Limit-TranscriptText -Text $responseBodyJson)) | Out-Null
+            $lines.Add('```') | Out-Null
+        }
+    }
+    $curl = Get-TranscriptRecordValue -Object $requestRecord -Name "curl"
+    if ($ApiTranscriptDetail -eq "full" -and $null -ne $curl) {
+        $lines.Add("") | Out-Null
+        $lines.Add("Curl example:") | Out-Null
+        $lines.Add("") | Out-Null
+        $lines.Add('```bash') | Out-Null
+        $lines.Add($curl) | Out-Null
+        $lines.Add('```') | Out-Null
+    }
+    $lines.Add("") | Out-Null
+    $lines.Add("Assertions:") | Out-Null
+    $assertions = Get-TranscriptRecordItems -Value (Get-TranscriptRecordValue -Object $Record -Name "assertions")
+    foreach ($assertion in $assertions) {
+        $assertionStatus = Get-TranscriptRecordValue -Object $assertion -Name "status"
+        $assertionDescription = Get-TranscriptRecordValue -Object $assertion -Name "description"
+        $assertionExpected = Get-TranscriptRecordValue -Object $assertion -Name "expected"
+        $assertionActual = Get-TranscriptRecordValue -Object $assertion -Name "actual"
+        $expectedJson = ConvertTo-JsonText -Value $assertionExpected
+        $actualJson = ConvertTo-JsonText -Value $assertionActual
+        $lines.Add("- ${assertionStatus}: $assertionDescription (expected: $expectedJson; actual: $actualJson)") | Out-Null
+    }
+    if (@($assertions).Count -eq 0) {
+        $lines.Add("- PASS: response captured") | Out-Null
+    }
+    $lines.Add("") | Out-Null
+    return ($lines -join "`n")
+}
+
+function Complete-ApiTranscriptScenario {
+    param(
+        [Parameter(Mandatory = $true)][string]$ScenarioName,
+        [Parameter(Mandatory = $true)][string]$Status,
+        [AllowNull()][string]$Note = ""
+    )
+
+    try {
+        foreach ($record in $script:ApiTranscript) {
+            if ($record["scenario"] -ne $ScenarioName) {
+                continue
+            }
+            $isCurrentRecord = [object]::ReferenceEquals($record, $script:CurrentApiRecord)
+            $hasFailedAssertion = @($record["assertions"] | Where-Object {
+                    if ($_ -is [System.Collections.IDictionary]) {
+                        $_["status"] -eq "FAIL"
+                    } else {
+                        $_.status -eq "FAIL"
+                    }
+                }).Count -gt 0
+            if ($Status -eq "FAIL" -and $record["result"] -ne "FAIL" -and ($isCurrentRecord -or $hasFailedAssertion)) {
+                $record["result"] = "FAIL"
+                $record["assertions"].Add([ordered]@{
+                    status = "FAIL"
+                    description = "scenario completed with failure"
+                    expected = "PASS"
+                    actual = Redact-FixtureIdsInText $Note
+                }) | Out-Null
+            } elseif ($record["result"] -eq "") {
+                $record["result"] = $Status
+            }
+
+            if ($PrintApiTranscript -and -not [bool]$record["_printed"]) {
+                Write-Host ""
+                Write-Host (Format-ApiTranscriptRecord -Record $record)
+                $record["_printed"] = $true
+            }
+        }
+    } catch {
+        throw "API transcript completion failed for ${ScenarioName}: $(Redact-Text $_.Exception.Message). $($_.ScriptStackTrace)"
+    }
+}
+
+function Save-ApiTranscript {
+    if (-not $WriteApiTranscript) {
+        return
+    }
+
+    $records = @()
+    foreach ($record in $script:ApiTranscript) {
+        $records += ConvertTo-PublicApiTranscriptRecord -Record $record
+    }
+
+    $resolvedMarkdownPath = Resolve-RepoPath $ApiTranscriptPath
+    $resolvedJsonPath = Resolve-RepoPath $ApiTranscriptJsonPath
+    $lines = New-Object 'System.Collections.Generic.List[string]'
+    $lines.Add("# Manual Full Feature Smoke API Transcript") | Out-Null
+    $lines.Add("") | Out-Null
+    $lines.Add("- Checked at: $($script:Summary.checked_at)") | Out-Null
+    $lines.Add("- Detail: $ApiTranscriptDetail") | Out-Null
+    $lines.Add("- Fixture IDs shown: $([bool]$ShowFixtureIds)") | Out-Null
+    $lines.Add("- Redaction: JWT/password/reset/Firebase/FCM tokens, raw images, raw vectors, and full Qdrant payloads are not recorded.") | Out-Null
+    $lines.Add("") | Out-Null
+    foreach ($record in $records) {
+        $lines.Add((Format-ApiTranscriptRecord -Record $record)) | Out-Null
+    }
+
+    Write-Utf8NoBom -Path $resolvedMarkdownPath -Text (($lines -join "`n") + "`n")
+    Write-Utf8NoBom -Path $resolvedJsonPath -Text ((ConvertTo-JsonText -Value $records) + "`n")
+    Write-Host "Wrote sanitized API transcript:"
+    Write-Host "  $resolvedMarkdownPath"
+    Write-Host "  $resolvedJsonPath"
 }
 
 function Get-PropertyValue {
@@ -459,9 +1044,11 @@ function Assert-Status {
     )
 
     if ([int]$Response.StatusCode -ne $ExpectedStatus) {
+        Add-ApiAssertion -Status "FAIL" -Description "HTTP status for $($Response.Method) $($Response.Url)" -Expected $ExpectedStatus -Actual ([int]$Response.StatusCode)
         $safeBody = ConvertTo-SanitizedBodyText -BodyText $Response.BodyText
         Fail-Assert "Expected HTTP $ExpectedStatus for $($Response.Method) $($Response.Url), actual $($Response.StatusCode). Body: $safeBody"
     }
+    Add-ApiAssertion -Status "PASS" -Description "HTTP status for $($Response.Method) $($Response.Url)" -Expected $ExpectedStatus -Actual ([int]$Response.StatusCode)
 }
 
 function Assert-StatusIn {
@@ -472,9 +1059,11 @@ function Assert-StatusIn {
     )
 
     if (-not ($ExpectedStatuses -contains [int]$Response.StatusCode)) {
+        Add-ApiAssertion -Status "FAIL" -Description "$Name HTTP status" -Expected ($ExpectedStatuses -join ",") -Actual ([int]$Response.StatusCode)
         $safeBody = ConvertTo-SanitizedBodyText -BodyText $Response.BodyText
         Fail-Assert "$Name expected HTTP status in [$($ExpectedStatuses -join ', ')], actual $($Response.StatusCode). Body: $safeBody"
     }
+    Add-ApiAssertion -Status "PASS" -Description "$Name HTTP status" -Expected ($ExpectedStatuses -join ",") -Actual ([int]$Response.StatusCode)
 }
 
 function Assert-Equal {
@@ -485,8 +1074,10 @@ function Assert-Equal {
     )
 
     if ("$Actual" -ne "$Expected") {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected $Expected -Actual $Actual
         Fail-Assert "$Name mismatch. Expected '$Expected', actual '$Actual'."
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected $Expected -Actual $Actual
 }
 
 function Assert-True {
@@ -496,8 +1087,10 @@ function Assert-True {
     )
 
     if ($Value -ne $true) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected $true -Actual $Value
         Fail-Assert "$Name must be true. Actual: $Value"
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected $true -Actual $Value
 }
 
 function Assert-False {
@@ -507,8 +1100,10 @@ function Assert-False {
     )
 
     if ($Value -ne $false) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected $false -Actual $Value
         Fail-Assert "$Name must be false. Actual: $Value"
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected $false -Actual $Value
 }
 
 function Assert-Null {
@@ -518,8 +1113,10 @@ function Assert-Null {
     )
 
     if ($null -ne $Value) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected $null -Actual $Value
         Fail-Assert "$Name must be null. Actual: $Value"
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected $null -Actual $Value
 }
 
 function Assert-NotNullOrEmpty {
@@ -529,11 +1126,14 @@ function Assert-NotNullOrEmpty {
     )
 
     if ($null -eq $Value) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected "present" -Actual $null
         Fail-Assert "$Name must be present."
     }
     if ($Value -is [string] -and [string]::IsNullOrWhiteSpace($Value)) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected "non-empty" -Actual $Value
         Fail-Assert "$Name must be non-empty."
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected "non-empty" -Actual $Value
 }
 
 function Assert-Count {
@@ -545,8 +1145,10 @@ function Assert-Count {
 
     $count = @($Value).Count
     if ($count -ne $Expected) {
+        Add-ApiAssertion -Status "FAIL" -Description $Name -Expected $Expected -Actual $count
         Fail-Assert "$Name count mismatch. Expected $Expected, actual $count."
     }
+    Add-ApiAssertion -Status "PASS" -Description $Name -Expected $Expected -Actual $count
 }
 
 function Assert-NotHasProperty {
@@ -557,8 +1159,10 @@ function Assert-NotHasProperty {
     )
 
     if (Test-ContainsPropertyDeep -Object $Object -Name $Name) {
+        Add-ApiAssertion -Status "FAIL" -Description "$Context hides $Name" -Expected "absent" -Actual "present"
         Fail-Assert "$Context must not expose '$Name'."
     }
+    Add-ApiAssertion -Status "PASS" -Description "$Context hides $Name" -Expected "absent" -Actual "absent"
 }
 
 function Find-ItemByProperty {
@@ -598,10 +1202,14 @@ function Invoke-Json {
         [AllowNull()][AllowEmptyString()][string]$BearerToken = ""
     )
 
+    $authenticated = -not [string]::IsNullOrWhiteSpace($BearerToken)
+    $contentType = if ($null -ne $BodyObject) { "application/json" } else { "" }
+    $transcriptRecord = New-ApiTranscriptRecord -Method $Method -Url $Url -ContentType $contentType -RequestBody $BodyObject -Authenticated $authenticated
+
     $headers = @{
         Accept = "application/json"
     }
-    if (-not [string]::IsNullOrWhiteSpace($BearerToken)) {
+    if ($authenticated) {
         $headers["Authorization"] = "Bearer $BearerToken"
     }
 
@@ -619,6 +1227,8 @@ function Invoke-Json {
     try {
         $response = Invoke-WebRequest @parameters
     } catch {
+        Complete-ApiTranscriptResponse -Record $transcriptRecord -StatusCode $null -BodyText ""
+        Add-ApiAssertion -Status "FAIL" -Description "HTTP request returned a response" -Expected "response" -Actual (Redact-FixtureIdsInText $_.Exception.Message)
         throw "HTTP request failed before response: $Method $Url. $(Redact-Text $_.Exception.Message)"
     }
 
@@ -631,6 +1241,18 @@ function Invoke-Json {
             $json = $null
         }
     }
+
+    $responseContentType = ""
+    if ($response.Headers.ContainsKey("Content-Type")) {
+        $responseContentType = [string]$response.Headers["Content-Type"]
+    }
+    $transcriptJson = $json
+    $transcriptBodyText = $bodyText
+    if (Test-OmitRawResponseBody -Url $Url -ContentType $responseContentType) {
+        $transcriptJson = $null
+        $transcriptBodyText = "[OMITTED_RAW_IMAGE_CONTENT]"
+    }
+    Complete-ApiTranscriptResponse -Record $transcriptRecord -StatusCode ([int]$response.StatusCode) -Json $transcriptJson -BodyText $transcriptBodyText
 
     return [pscustomobject]@{
         Method = $Method
@@ -666,6 +1288,8 @@ function Invoke-Multipart {
     $request = $null
     $response = $null
     $streams = New-Object 'System.Collections.Generic.List[System.IDisposable]'
+    $authenticated = -not [string]::IsNullOrWhiteSpace($BearerToken)
+    $transcriptRecord = New-ApiTranscriptRecord -Method $Method -Url $Url -ContentType "multipart/form-data" -Fields $Fields -Files $Files -Authenticated $authenticated
 
     try {
         foreach ($key in $Fields.Keys) {
@@ -693,7 +1317,7 @@ function Invoke-Multipart {
         $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::new($Method), $Url)
         $request.Content = $content
         $request.Headers.Accept.Add([System.Net.Http.Headers.MediaTypeWithQualityHeaderValue]::new("application/json"))
-        if (-not [string]::IsNullOrWhiteSpace($BearerToken)) {
+        if ($authenticated) {
             $request.Headers.Authorization = [System.Net.Http.Headers.AuthenticationHeaderValue]::new("Bearer", $BearerToken)
         }
 
@@ -708,6 +1332,8 @@ function Invoke-Multipart {
             }
         }
 
+        Complete-ApiTranscriptResponse -Record $transcriptRecord -StatusCode ([int]$response.StatusCode) -Json $json -BodyText $bodyText
+
         return [pscustomobject]@{
             Method = $Method
             Url = $Url
@@ -716,6 +1342,8 @@ function Invoke-Multipart {
             BodyText = $bodyText
         }
     } catch {
+        Complete-ApiTranscriptResponse -Record $transcriptRecord -StatusCode $null -BodyText ""
+        Add-ApiAssertion -Status "FAIL" -Description "multipart request returned a response" -Expected "response" -Actual (Redact-FixtureIdsInText $_.Exception.Message)
         throw "Multipart request failed before response: $Method $Url. $(Redact-Text $_.Exception.Message)"
     } finally {
         if ($null -ne $response) { $response.Dispose() }
@@ -800,6 +1428,7 @@ function Skip-Scenario {
 
     Write-Host "SKIP $Name - $Note"
     Set-ScenarioResult -Name $Name -Status "SKIP" -Note $Note -Optional $Optional
+    Complete-ApiTranscriptScenario -ScenarioName $Name -Status "SKIP" -Note $Note
 }
 
 function Invoke-Scenario {
@@ -810,18 +1439,26 @@ function Invoke-Scenario {
     )
 
     Write-Step $Name
+    $previousScenarioName = $script:CurrentScenarioName
+    $script:CurrentScenarioName = $Name
+    $script:CurrentApiRecord = $null
     try {
         & $Command
         Set-ScenarioResult -Name $Name -Status "PASS" -Optional ([bool]$Optional)
         Write-Host "PASS $Name"
+        Complete-ApiTranscriptScenario -ScenarioName $Name -Status "PASS"
     } catch {
         $message = Redact-Text $_.Exception.Message
         Set-ScenarioResult -Name $Name -Status "FAIL" -Note $message -Optional ([bool]$Optional)
         Write-Host "FAIL $Name - $message"
+        Complete-ApiTranscriptScenario -ScenarioName $Name -Status "FAIL" -Note $message
         if ($Optional -and -not $StopOnOptionalFailure) {
             return
         }
         throw
+    } finally {
+        $script:CurrentScenarioName = $previousScenarioName
+        $script:CurrentApiRecord = $null
     }
 }
 
@@ -938,6 +1575,104 @@ function Invoke-NativeCapture {
     }
 }
 
+function Get-RequiredComposeProjectName {
+    if ([string]::IsNullOrWhiteSpace($ComposeProjectName)) {
+        Fail-Config "ComposeProjectName must not be empty for docker compose commands."
+    }
+    return $ComposeProjectName
+}
+
+function New-DockerComposeArguments {
+    param([string[]]$CommandArguments = @())
+
+    $resolvedEnvFile = Resolve-RepoPath $EnvFile
+    if (-not (Test-Path -LiteralPath $resolvedEnvFile -PathType Leaf)) {
+        Fail-Config "EnvFile not found: $EnvFile"
+    }
+    if ((Split-Path -Leaf $resolvedEnvFile) -eq ".env.example") {
+        Fail-Config "Refusing to read .env.example as runtime secrets."
+    }
+
+    $resolvedComposeFiles = @()
+    foreach ($file in $ComposeFile) {
+        $resolved = Resolve-RepoPath $file
+        if (-not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+            Fail-Config "ComposeFile not found: $file"
+        }
+        $resolvedComposeFiles += $resolved
+    }
+
+    $composeArgs = @("compose", "-p", (Get-RequiredComposeProjectName), "--env-file", $resolvedEnvFile)
+    foreach ($file in $resolvedComposeFiles) {
+        $composeArgs += @("-f", $file)
+    }
+    $composeArgs += $CommandArguments
+    return $composeArgs
+}
+
+function Invoke-DockerComposeCommand {
+    param(
+        [string[]]$CommandArguments = @(),
+        [switch]$AllowFailure
+    )
+
+    $composeArgs = New-DockerComposeArguments -CommandArguments $CommandArguments
+    return Invoke-NativeCapture -File "docker" -Arguments $composeArgs -AllowFailure:$AllowFailure
+}
+
+function Test-HttpOk {
+    param([Parameter(Mandatory = $true)][string]$Url)
+
+    try {
+        $response = Invoke-WebRequest -Method "GET" -Uri $Url -SkipHttpErrorCheck -TimeoutSec 5
+        return ([int]$response.StatusCode -eq 200)
+    } catch {
+        return $false
+    }
+}
+
+function Wait-RuntimeHealth {
+    $deadline = (Get-Date).AddMinutes(5)
+    $rootHealthUrl = Join-Url $RootUrl "actuator/health"
+    $pythonHealthUrl = Join-Url $PythonEmbedUrl "health"
+    $qdrantHealthUrl = Join-Url $QdrantUrl "healthz"
+
+    while ((Get-Date) -lt $deadline) {
+        if ((Test-HttpOk -Url $rootHealthUrl) -and
+            (Test-HttpOk -Url $pythonHealthUrl) -and
+            (Test-HttpOk -Url $qdrantHealthUrl)) {
+            return
+        }
+        Start-Sleep -Seconds 5
+    }
+    Fail-Config "Runtime did not become healthy within 5 minutes after docker compose up."
+}
+
+function Initialize-RuntimeIfRequested {
+    if ($ResetRuntimeData) {
+        Write-Step "runtime_reset"
+        Invoke-DockerComposeCommand -CommandArguments @("down", "-v") | Out-Null
+    }
+    if ($StartRuntime) {
+        Write-Step "runtime_start"
+        Invoke-DockerComposeCommand -CommandArguments @("up", "-d", "--build") | Out-Null
+        $script:RuntimeStartedByScript = $true
+        Wait-RuntimeHealth
+    }
+}
+
+function Stop-RuntimeIfRequested {
+    if (-not $StopRuntimeAfter) {
+        return
+    }
+    try {
+        Write-Step "runtime_stop"
+        Invoke-DockerComposeCommand -CommandArguments @("down", "-v") -AllowFailure | Out-Null
+    } catch {
+        Write-Warning "Could not stop runtime after smoke: $(Redact-Text $_.Exception.Message)"
+    }
+}
+
 function Invoke-MySqlQueryOptional {
     param([Parameter(Mandatory = $true)][string]$Query)
 
@@ -984,15 +1719,7 @@ function Invoke-MySqlQueryOptional {
         }
         Add-Secret $password
 
-        $composeArgs = @("compose")
-        if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
-            $composeArgs += @("-p", $ComposeProjectName)
-        }
-        $composeArgs += @("--env-file", $resolvedEnvFile)
-        foreach ($file in $resolvedComposeFiles) {
-            $composeArgs += @("-f", $file)
-        }
-        $composeArgs += @(
+        $composeArgs = New-DockerComposeArguments -CommandArguments @(
             "exec",
             "-T",
             "-e",
@@ -1066,6 +1793,71 @@ SELECT
         owner_user_id = [string]$columns[3]
         Note = ""
     }
+}
+
+function Get-InitialDbCounts {
+    $query = @"
+SELECT
+  (SELECT COUNT(*) FROM users),
+  (SELECT COUNT(*) FROM dogs),
+  (SELECT COUNT(*) FROM dog_images),
+  (SELECT COUNT(*) FROM dog_nose_references),
+  (SELECT COUNT(*) FROM verification_logs),
+  (SELECT COUNT(*) FROM adoption_posts),
+  (SELECT COUNT(*) FROM adoption_post_likes);
+"@
+    $result = Invoke-MySqlQueryOptional -Query $query
+    if (-not $result.Available -or @($result.Rows).Count -eq 0) {
+        Fail-Assert "Initial DB row count check unavailable: $($result.Note)"
+    }
+
+    $columns = ([string]@($result.Rows)[0]).Split([char]"`t")
+    if ($columns.Count -lt 7) {
+        Fail-Assert "Initial DB row count check returned an unexpected row shape."
+    }
+
+    return [ordered]@{
+        users = [int]$columns[0]
+        dogs = [int]$columns[1]
+        dog_images = [int]$columns[2]
+        dog_nose_references = [int]$columns[3]
+        verification_logs = [int]$columns[4]
+        adoption_posts = [int]$columns[5]
+        adoption_post_likes = [int]$columns[6]
+    }
+}
+
+function Get-QdrantActivePointCount {
+    $response = Invoke-Json -Method "POST" -Url (Join-Url $QdrantUrl "collections/$QdrantCollection/points/count") -BodyObject @{
+        exact = $true
+        filter = @{
+            must = @(
+                @{
+                    key = "is_active"
+                    match = @{
+                        value = $true
+                    }
+                }
+            )
+        }
+    }
+    Assert-Status -Response $response -ExpectedStatus 200
+    $result = Get-PropertyValue -Object $response.Json -Name "result"
+    $count = Get-PropertyValue -Object $result -Name "count"
+    Assert-NotNullOrEmpty -Value $count -Name "initial_qdrant_active_points.count"
+    return [int64]$count
+}
+
+function Verify-CleanRuntimeData {
+    $dbCounts = Get-InitialDbCounts
+    $qdrantActivePoints = Get-QdrantActivePointCount
+    $script:Summary["counts"]["initial_db"] = $dbCounts
+    $script:Summary["counts"]["initial_qdrant_active_points"] = $qdrantActivePoints
+
+    foreach ($name in $dbCounts.Keys) {
+        Assert-Equal -Actual $dbCounts[$name] -Expected 0 -Name "initial_db.$name"
+    }
+    Assert-Equal -Actual $qdrantActivePoints -Expected 0 -Name "initial_qdrant_active_points"
 }
 
 function Invoke-Reconciliation {
@@ -1602,7 +2394,12 @@ function Test-FirebaseDisabledResponse {
     if ([int]$Response.StatusCode -ne 503) {
         return $false
     }
-    return "$(Get-PropertyValue -Object $Response.Json -Name "error_code")" -eq "FIREBASE_DISABLED"
+    $isDisabled = "$(Get-PropertyValue -Object $Response.Json -Name "error_code")" -eq "FIREBASE_DISABLED"
+    if ($isDisabled) {
+        Add-ApiAssertion -Status "PASS" -Description "Firebase disabled response" -Expected "503 FIREBASE_DISABLED" -Actual "503 FIREBASE_DISABLED"
+        Set-CurrentApiResult -Result "EXPECTED_DISABLED"
+    }
+    return $isDisabled
 }
 
 function Invoke-EnabledChatFlow {
@@ -1663,6 +2460,7 @@ function Invoke-ChatFlow {
         if ($FirebaseMode -eq "disabled") {
             $disabled = Invoke-Json -Method "POST" -Url (Join-Url $BaseUrl "firebase/custom-token") -BearerToken $script:AdopterToken
             if (-not (Test-FirebaseDisabledResponse -Response $disabled)) {
+                Add-ApiAssertion -Status "FAIL" -Description "Firebase disabled response" -Expected "503 FIREBASE_DISABLED" -Actual "$($disabled.StatusCode) $(Get-PropertyValue -Object $disabled.Json -Name "error_code")"
                 Fail-Assert "Firebase disabled mode expected 503 FIREBASE_DISABLED, actual HTTP $($disabled.StatusCode)."
             }
             $script:Summary["markers"]["chat_result"] = "FIREBASE_DISABLED expected PASS"
@@ -1791,7 +2589,9 @@ function Verify-FileServing {
 }
 
 try {
+    Initialize-RuntimeIfRequested
     Invoke-Scenario -Name "preflight" -Command { Invoke-Preflight }
+    Invoke-Scenario -Name "initial_runtime_cleanliness" -Command { Verify-CleanRuntimeData }
     Invoke-Scenario -Name "owner_register_multipart" -Command { Register-Owner }
     Invoke-Scenario -Name "owner_login" -Command { Login-Owner }
     Invoke-Scenario -Name "users_me" -Command { Get-OwnerMe }
@@ -1819,6 +2619,7 @@ try {
     }
 
     Save-Summary
+    Save-ApiTranscript
     Write-Host ""
     Write-Host "MANUAL FULL FEATURE SMOKE PASSED"
     exit 0
@@ -1827,6 +2628,7 @@ try {
     Write-Error $message
     try {
         Save-Summary
+        Save-ApiTranscript
     } catch {
         Write-Warning "Could not write sanitized evidence after failure: $(Redact-Text $_.Exception.Message)"
     }
@@ -1834,4 +2636,6 @@ try {
         exit 2
     }
     exit 1
+} finally {
+    Stop-RuntimeIfRequested
 }
