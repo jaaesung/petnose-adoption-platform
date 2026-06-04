@@ -78,6 +78,9 @@ param(
 
     [string]$EnvFile = "infra/docker/.env",
     [string[]]$ComposeFile = @("infra/docker/compose.yaml", "infra/docker/compose.dev.yaml"),
+    [AllowNull()]
+    [AllowEmptyString()]
+    [string]$ComposeProjectName = "",
     [string]$MysqlService = "mysql",
     [AllowNull()]
     [AllowEmptyString()]
@@ -94,6 +97,26 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+function Expand-ComposeFileList {
+    param([string[]]$Values)
+
+    $expanded = @()
+    foreach ($value in @($Values)) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            continue
+        }
+        foreach ($part in ([string]$value).Split([char]";", [System.StringSplitOptions]::RemoveEmptyEntries)) {
+            $trimmed = $part.Trim()
+            if (-not [string]::IsNullOrWhiteSpace($trimmed)) {
+                $expanded += $trimmed
+            }
+        }
+    }
+    return $expanded
+}
+
+$ComposeFile = @(Expand-ComposeFileList -Values $ComposeFile)
 
 $script:RepoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $script:StartedAt = (Get-Date).ToUniversalTime()
@@ -131,6 +154,7 @@ $script:Summary = [ordered]@{
         firebase = $FirebaseMode
         run_reconciliation = [bool]$RunReconciliation
         allow_ambiguous_handover = [bool]$AllowAmbiguousHandover
+        compose_project_name = if ([string]::IsNullOrWhiteSpace($ComposeProjectName)) { "default" } else { $ComposeProjectName }
     }
     scenarios = [ordered]@{}
     markers = [ordered]@{}
@@ -171,6 +195,7 @@ Defaults:
   -RunReconciliation             true
   -OutputDir                     docs/ops-evidence/manual-full-feature-smoke-local
   -SummaryPath                   docs/ops-evidence/manual-full-feature-smoke-local/summary.json
+  -ComposeProjectName            optional docker compose project name for DB/reconciliation
 
 Modes:
   -PasswordResetMode skip|dev-exposed|email
@@ -959,7 +984,11 @@ function Invoke-MySqlQueryOptional {
         }
         Add-Secret $password
 
-        $composeArgs = @("compose", "--env-file", $resolvedEnvFile)
+        $composeArgs = @("compose")
+        if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
+            $composeArgs += @("-p", $ComposeProjectName)
+        }
+        $composeArgs += @("--env-file", $resolvedEnvFile)
         foreach ($file in $resolvedComposeFiles) {
             $composeArgs += @("-f", $file)
         }
@@ -1077,10 +1106,10 @@ function Invoke-Reconciliation {
         $arguments += @("-MysqlPassword", $MysqlPassword)
     }
     if ($ComposeFile.Count -gt 0) {
-        $arguments += "-ComposeFile"
-        foreach ($file in $ComposeFile) {
-            $arguments += $file
-        }
+        $arguments += @("-ComposeFile", ($ComposeFile -join ";"))
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ComposeProjectName)) {
+        $arguments += @("-ComposeProjectName", $ComposeProjectName)
     }
 
     $result = Invoke-NativeCapture -File "pwsh" -Arguments $arguments -AllowFailure
@@ -1250,7 +1279,7 @@ function Register-Owner {
     $response = Invoke-Multipart -Method "POST" -Url (Join-Url $BaseUrl "auth/register") -Fields @{
         email = $script:OwnerEmail
         password = $script:OwnerPassword
-        display_name = "Manual Smoke Owner"
+        display_name = "SmokeOwner"
         contact_phone = "01012345678"
         region = "Seoul"
     } -Files @(
@@ -1299,13 +1328,13 @@ function Get-OwnerMe {
 
 function Update-OwnerProfile {
     $response = Invoke-Json -Method "PATCH" -Url (Join-Url $BaseUrl "users/me/profile") -BearerToken $script:OwnerToken -BodyObject @{
-        display_name = "Manual Smoke Owner Updated"
+        display_name = "Owner2"
         contact_phone = "01087654321"
         region = "Busan"
     }
     Assert-Status -Response $response -ExpectedStatus 200
     Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "user_id") -Expected $script:OwnerUserId -Name "profile.user_id"
-    Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "display_name") -Expected "Manual Smoke Owner Updated" -Name "profile.display_name"
+    Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "display_name") -Expected "Owner2" -Name "profile.display_name"
     Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "contact_phone") -Expected "01087654321" -Name "profile.contact_phone"
     Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "region") -Expected "Busan" -Name "profile.region"
     Assert-NotHasProperty -Object $response.Json -Name "password_hash" -Context "profile update response"
@@ -1524,7 +1553,7 @@ function Register-And-LoginAdopter {
     $register = Invoke-Json -Method "POST" -Url (Join-Url $BaseUrl "auth/register") -BodyObject @{
         email = $script:AdopterEmail
         password = $script:AdopterPassword
-        display_name = "Manual Smoke Adopter"
+        display_name = "Adopter1"
         contact_phone = "01022223333"
         region = "Daegu"
     }
@@ -1636,21 +1665,25 @@ function Invoke-ChatFlow {
             if (-not (Test-FirebaseDisabledResponse -Response $disabled)) {
                 Fail-Assert "Firebase disabled mode expected 503 FIREBASE_DISABLED, actual HTTP $($disabled.StatusCode)."
             }
+            $script:Summary["markers"]["chat_result"] = "FIREBASE_DISABLED expected PASS"
             return
         }
 
         if ($FirebaseMode -eq "enabled") {
             Invoke-EnabledChatFlow
+            $script:Summary["markers"]["chat_result"] = "enabled PASS"
             return
         }
 
         $probe = Invoke-Json -Method "POST" -Url (Join-Url $BaseUrl "firebase/custom-token") -BearerToken $script:AdopterToken
         if (Test-FirebaseDisabledResponse -Response $probe) {
             $script:Summary["validation_notes"] += "Firebase auto mode observed FIREBASE_DISABLED and treated disabled runtime as PASS."
+            $script:Summary["markers"]["chat_result"] = "FIREBASE_DISABLED expected PASS"
             return
         }
         Assert-Status -Response $probe -ExpectedStatus 200
         Invoke-EnabledChatFlow -ExistingTokenResponse $probe
+        $script:Summary["markers"]["chat_result"] = "enabled PASS"
     }
 }
 
@@ -1672,6 +1705,9 @@ function Verify-Handover {
     Assert-Equal -Actual (Get-PropertyValue -Object $response.Json -Name "dimension") -Expected $ExpectedVectorDimension -Name "handover.dimension"
     $decision = [string](Get-PropertyValue -Object $response.Json -Name "decision")
     $matched = Get-PropertyValue -Object $response.Json -Name "matched"
+    $script:Summary["markers"]["handover_decision"] = $decision
+    $script:Summary["markers"]["handover_matched"] = $matched
+    $script:Summary["counts"]["handover_similarity_score"] = Get-PropertyValue -Object $response.Json -Name "similarity_score"
     if ($decision -eq "MATCHED") {
         Assert-True -Value $matched -Name "handover.matched"
     } elseif ($decision -eq "AMBIGUOUS" -and $AllowAmbiguousHandover) {

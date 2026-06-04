@@ -46,6 +46,52 @@ pwsh ./scripts/manual-full-feature-smoke.ps1 `
 
 `manual-full-feature-smoke-local/` 디렉터리는 gitignore 대상이다.
 
+## Dedicated compose project 실행
+
+기존 로컬 `petnose` stack이나 host port `3306`을 건드리지 않고 검증하려면 별도 compose project와 temp env를 사용한다. 예를 들어 temp env에서 `NGINX_PORT=8088`, `SPRING_APP_PORT=18080`, `PYTHON_EMBED_PORT=18000`, `QDRANT_PORT=16333`, `MYSQL_PORT=13306`으로 override한다.
+
+주의: 현재 compose에서 `QDRANT_PORT`는 host port mapping과 Spring 내부 접속 port에 함께 쓰인다. Host에는 `16333`을 열되 Spring 컨테이너가 내부 service `qdrant:6333`으로 붙게 하려면 temp compose override를 하나 더 둔다.
+
+```yaml
+# C:\tmp\petnose-manual-full-smoke\compose.qdrant-internal.yml
+services:
+  spring-api:
+    environment:
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+```
+
+그 다음 아래처럼 실행한다.
+
+```powershell
+$ComposeFiles = @(
+  "infra/docker/compose.yaml",
+  "infra/docker/compose.dev.yaml",
+  "infra/docker/compose.real-model.yaml",
+  "C:\tmp\petnose-manual-full-smoke\compose.qdrant-internal.yml"
+)
+
+pwsh ./scripts/manual-full-feature-smoke.ps1 `
+  -RootUrl "http://localhost:8088" `
+  -BaseUrl "http://localhost:8088/api" `
+  -QdrantUrl "http://localhost:16333" `
+  -PythonEmbedUrl "http://localhost:18000" `
+  -NoseImageDir "C:\Users\jaesung\Desktop\dog_nose\ddubi" `
+  -PasswordResetMode skip `
+  -FirebaseMode auto `
+  -RunReconciliation `
+  -WriteEvidence `
+  -AllowAmbiguousHandover `
+  -EnvFile "C:\tmp\petnose-manual-full-smoke\.env" `
+  -ComposeProjectName "petnose_manual_smoke" `
+  -ComposeFile $ComposeFiles `
+  -MysqlService "mysql"
+```
+
+`ComposeProjectName`을 생략하면 기존 compose 기본 project 동작을 유지한다. 값을 넘기면 script의 MySQL side-effect check와 reconciliation 호출이 모두 `docker compose -p <name>`을 사용한다.
+
+`pwsh -File`로 다른 PowerShell process를 열어 실행할 때는 array parameter가 안전하게 전달되지 않을 수 있다. 그런 경우 `-ComposeFile "infra/docker/compose.yaml;infra/docker/compose.dev.yaml;infra/docker/compose.real-model.yaml"`처럼 semicolon-separated string으로 넘기거나, 예시처럼 같은 `pwsh` process 안에서 `$ComposeFiles` 배열을 만든 뒤 script를 호출한다.
+
 ## ddubi 예시
 
 `-NoseImageDir "C:\Users\jaesung\Desktop\dog_nose\ddubi"` 아래에 다음 파일을 둔다.
@@ -167,6 +213,7 @@ Duplicate suspected가 발생하면 같은 nose fixture가 이미 같은 runtime
 | `WriteEvidence` | sanitized summary JSON/Markdown 저장 |
 | `StopOnOptionalFailure` | optional Firebase/DB side-effect 실패도 전체 실패로 처리 |
 | `AllowAmbiguousHandover` | handover `AMBIGUOUS`를 warning pass로 허용 |
+| `ComposeProjectName` | dedicated compose project의 MySQL/reconciliation 조회에 사용할 project name |
 
 자세한 사용법은 다음 명령으로 확인한다.
 
