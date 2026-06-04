@@ -45,12 +45,15 @@ MAIL_SMTP_STARTTLS_ENABLE=true
 MAIL_SMTP_CONNECTION_TIMEOUT_MS=5000
 MAIL_SMTP_TIMEOUT_MS=3000
 MAIL_SMTP_WRITE_TIMEOUT_MS=5000
+MANAGEMENT_HEALTH_MAIL_ENABLED=false
 ```
 
 주의:
 
 - 운영에서는 `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=false`를 유지한다.
 - `MAIL_PASSWORD` 실제 값은 repository에 절대 커밋하지 않고 서버/CI 환경변수 또는 secret store로만 주입한다.
+- 비밀번호 재설정 이메일은 optional 기능이므로 `MANAGEMENT_HEALTH_MAIL_ENABLED=false`가 기본값이다. SMTP 연결 상태를 서비스 health에 포함해야 하는 런타임에서만 true로 설정한다.
+- `AUTH_PASSWORD_RESET_EMAIL_ENABLED`는 reset link 발송 여부이고, `MANAGEMENT_HEALTH_MAIL_ENABLED`는 Actuator mail health 포함 여부다. 두 값은 별도 정책으로 관리한다.
 - SMTP username/password, service account, reset token 값은 로그, PR 본문, evidence에 남기지 않는다.
 - reset token은 로그인 비밀번호가 아니라 `POST /api/auth/password-reset/confirm`에서 새 비밀번호 설정에만 사용하는 1회성 secret이다.
 
