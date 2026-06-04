@@ -101,7 +101,7 @@ Implemented follow-up scope:
 
 - Firebase chat `FIREBASE_DISABLED` 대응은 runtime 설정/운영 확인으로 처리한다.
 - `POST /api/auth/register`는 기존 JSON signup을 유지하면서 multipart/form-data와 optional `profile_image`를 지원한다.
-- 사용자 profile image 저장/변경 API와 로그인 사용자 비밀번호 변경 API, reset token 기반 비밀번호 재설정 API를 제공한다.
+- 사용자 profile image 저장/변경 API와 로그인 사용자 비밀번호 변경 API, reset token 기반 비밀번호 재설정 API를 제공한다. email-enabled runtime에서는 reset link를 transaction commit 이후 async email로 발송할 수 있다.
 - 좋아요/찜은 `users.liked` JSON/map이 아니라 `adoption_post_likes` 관계 테이블로 구현한다.
 - 입양 완료 시 입양자는 `dogs.owner_user_id`가 아니라 `adoption_posts.adopter_user_id`로 추적한다.
 - `adoption_posts.adopter_user_id`는 `users.id` reference이며 `ADOPTER` role이 아니다.

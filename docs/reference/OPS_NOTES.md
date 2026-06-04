@@ -24,6 +24,36 @@
 > `.env.example`의 `[SECRET]` 항목(`MYSQL_PASSWORD`, `MYSQL_ROOT_PASSWORD`, `SPRING_DATASOURCE_PASSWORD`)은  
 > 반드시 실제 값으로 교체하고 `MYSQL_PASSWORD`와 `SPRING_DATASOURCE_PASSWORD`는 동일하게 유지하세요.
 
+### 비밀번호 재설정 이메일 설정
+
+기본 runtime은 비밀번호 재설정 token을 response에 노출하지 않고 이메일 발송도 비활성화한다.
+운영에서 reset link 이메일 발송을 사용하려면 `AUTH_PASSWORD_RESET_EMAIL_ENABLED=true`와 SMTP 환경변수를 함께 설정한다.
+
+```dotenv
+AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=false
+AUTH_PASSWORD_RESET_EMAIL_ENABLED=false
+AUTH_PASSWORD_RESET_URL_TEMPLATE=http://localhost:3000/password-reset?token={token}
+AUTH_PASSWORD_RESET_MAIL_FROM=no-reply@petnose.local
+AUTH_PASSWORD_RESET_MAIL_SUBJECT=[PetNose] 비밀번호 재설정 안내
+
+MAIL_HOST=
+MAIL_PORT=587
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_SMTP_AUTH=true
+MAIL_SMTP_STARTTLS_ENABLE=true
+MAIL_SMTP_CONNECTION_TIMEOUT_MS=5000
+MAIL_SMTP_TIMEOUT_MS=3000
+MAIL_SMTP_WRITE_TIMEOUT_MS=5000
+```
+
+주의:
+
+- 운영에서는 `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=false`를 유지한다.
+- `MAIL_PASSWORD` 실제 값은 repository에 절대 커밋하지 않고 서버/CI 환경변수 또는 secret store로만 주입한다.
+- SMTP username/password, service account, reset token 값은 로그, PR 본문, evidence에 남기지 않는다.
+- reset token은 로그인 비밀번호가 아니라 `POST /api/auth/password-reset/confirm`에서 새 비밀번호 설정에만 사용하는 1회성 secret이다.
+
 ### MySQL 포트 충돌 해결
 
 로컬에 MySQL이 3306으로 실행 중이면 컨테이너 포트 충돌이 발생합니다.  
