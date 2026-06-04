@@ -212,8 +212,14 @@ Response `200`:
 
 Policy:
 
-- email 존재 여부를 노출하지 않는다.
-- 비밀번호 조회 API는 만들지 않는다.
+- 이 API는 비밀번호를 조회하지 않는다.
+- active user email이면 reset token을 생성하고 DB에는 `password_reset_tokens.token_hash` SHA-256 hex hash만 저장한다.
+- 운영에서는 reset token 원문을 response에 노출하지 않는다.
+- email sending enabled runtime에서는 reset link를 가입 이메일로 발송한다.
+- reset link 이메일 발송은 token 저장 transaction commit 이후 비동기로 수행한다.
+- email이 존재하지 않거나 inactive user여도 `requested=true`로 동일하게 응답한다.
+- dev/test 환경에서는 `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=true`로 token을 response에 노출할 수 있지만 운영에서는 사용하지 않는다.
+- reset token은 로그인 token/password가 아니며, `POST /api/auth/password-reset/confirm`에서 새 비밀번호 설정에만 사용된다.
 
 ### E. 비밀번호 재설정 확정
 
@@ -238,6 +244,14 @@ Response `200`:
   "reset": true
 }
 ```
+
+Policy:
+
+- request의 `reset_token`은 이메일 링크 또는 dev/test response에서 받은 token이다.
+- token은 SHA-256 hash lookup으로 검증한다.
+- token이 만료/사용됨/존재하지 않으면 비밀번호를 변경하지 않는다.
+- 성공 시 새 `password_hash`를 저장하고 token `used_at`을 기록한다.
+- 성공 후 사용자는 새 비밀번호로 login API를 호출한다.
 
 ### F. 좋아요 추가
 
@@ -601,7 +615,7 @@ Dev/test expose response `200` when `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONS
 ```json
 {
   "requested": true,
-  "reset_token": "raw-dev-reset-token",
+  "reset_token": "<dev-test-reset-token>",
   "expires_in": 1800
 }
 ```
@@ -609,12 +623,16 @@ Dev/test expose response `200` when `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONS
 Contract notes:
 
 - email은 signup/login과 동일하게 trim 후 lowercase로 normalize한다.
+- 이 API는 비밀번호를 조회하지 않는다.
 - 존재하지 않는 email 또는 inactive user여도 `requested=true`를 반환한다.
 - email 존재 여부를 status code, error code, message, default response field로 구분해 노출하지 않는다.
+- active user email이면 reset token을 생성한다.
 - reset token 원문은 DB에 저장하지 않고 `password_reset_tokens.token_hash`에 SHA-256 hex hash만 저장한다.
 - 기본 설정은 `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=false`이며, 이때 response에는 `reset_token`과 `expires_in`을 포함하지 않는다.
-- `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=true`는 shared dev/test 편의용이다. 이 값이 true이고 active user email인 경우에만 raw reset token을 응답에 임시 포함할 수 있다.
-- 실제 email/SMS provider 연동은 이번 PR 범위가 아니다.
+- `AUTH_PASSWORD_RESET_EXPOSE_TOKEN_IN_RESPONSE=true`는 shared dev/test 편의용이다. 이 값이 true이고 active user email인 경우에만 reset token을 응답에 임시 포함할 수 있다.
+- email sending enabled runtime에서는 reset link를 가입 이메일로 발송한다.
+- reset link 이메일 발송은 token 저장 transaction commit 이후 비동기로 수행한다.
+- reset token은 로그인 token/password가 아니며, `POST /api/auth/password-reset/confirm`에서 새 비밀번호 설정에만 사용된다.
 - reset token은 service account/token/secret과 동일하게 로그, PR 본문, 스크린샷에 남기지 않는다.
 - 비밀번호 조회 API는 없다.
 
@@ -633,7 +651,7 @@ Request body:
 
 ```json
 {
-  "reset_token": "raw-reset-token",
+  "reset_token": "<reset-token>",
   "new_password": "new-password123"
 }
 ```
@@ -648,12 +666,13 @@ Response `200`:
 
 Contract notes:
 
-- `reset_token`은 required다.
+- `reset_token`은 이메일 링크 또는 dev/test response에서 받은 token이며 required다.
 - `new_password`는 trim 후 8자 이상, 255자 이하이어야 한다.
-- raw reset token을 SHA-256 hex hash로 바꾼 뒤 DB lookup을 수행한다.
+- request token을 SHA-256 hex hash로 바꾼 뒤 DB lookup을 수행한다.
 - token이 없거나 이미 사용되었거나 만료되었으면 비밀번호를 변경하지 않는다.
 - 성공 시 `users.password_hash`를 새 BCrypt hash로 갱신하고 reset token `used_at`을 기록한다.
 - 성공 시 같은 user의 다른 unused reset token도 사용 처리한다.
+- 성공 후 사용자는 새 비밀번호로 `POST /api/auth/login`을 호출한다.
 - response에는 `reset=true`만 반환하고 `password` 또는 `password_hash`를 노출하지 않는다.
 
 Error codes:
