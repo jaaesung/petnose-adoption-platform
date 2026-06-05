@@ -30,6 +30,9 @@
 | Vector/Storage 참고 | `reference/STORAGE_AND_VECTOR_BOUNDARY.md` | Qdrant/Python Embed/file storage 경계 판단 |
 | Qdrant 정합성 복구 | `reference/QDRANT_RECONCILIATION_RUNBOOK.md` | `dog_nose_references`와 Qdrant active points drift 점검/복구 |
 | 수동 전체 smoke | `reference/MANUAL_FULL_FEATURE_SMOKE.md` | 회원가입부터 입양 완료까지 local/dev 전체 기능 수동 검증 |
+| main 서버 배포 준비 | `reference/MAIN_RELEASE_SERVER_DEPLOYMENT_CHECKLIST.md` | `/opt/petnose` 기준 production 배포 파일, env, compose, readiness check |
+| Firebase chat 배포 | `reference/FIREBASE_CHAT_DEPLOYMENT.md` | production Firebase service account, compose.firebase, Firestore rules 배포 |
+| 앱팀 production handoff | `reference/APP_TEAM_PRODUCTION_HANDOFF.md` | API base URL, google-services.json, custom token/FCM/Firestore listener 전달 범위 |
 | 모델 분석 근거 | `model-analysis/README.md` | dog nose v2 threshold/Qdrant reference 설계 summary와 재현 경로 확인 |
 | Spring-Python 참고 | `reference/SPRING_PYTHON_EMBED_CONTRACT.md` | Spring Boot ↔ Python Embed 연동 작업 |
 | CI/CD 참고 | `reference/CI_CD_WORKFLOW_OVERVIEW.md` | GitHub Actions CI, image publish, CD 범위 구분 |
