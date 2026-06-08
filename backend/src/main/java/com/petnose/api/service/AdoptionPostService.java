@@ -41,7 +41,10 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -57,6 +60,7 @@ public class AdoptionPostService {
     private static final int DEFAULT_PUBLIC_PAGE = 0;
     private static final int DEFAULT_PUBLIC_PAGE_SIZE = 20;
     private static final int MAX_PUBLIC_PAGE_SIZE = 100;
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private static final List<AdoptionPostStatus> ACTIVE_STATUSES = List.of(
             AdoptionPostStatus.DRAFT,
@@ -236,6 +240,7 @@ public class AdoptionPostService {
     public AdoptionPostCreateResponse create(Long currentUserId, AdoptionPostCreateRequest request) {
         validateRequest(request);
         AdoptionPostStatus requestedStatus = AdoptionPostStatus.fromCreateRequest(request.status());
+        Long price = parsePrice(request.price());
 
         User currentUser = userRepository.findById(currentUserId)
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다."));
@@ -254,6 +259,7 @@ public class AdoptionPostService {
         post.setDogId(dog.getId());
         post.setTitle(request.title().trim());
         post.setContent(request.content().trim());
+        post.setPrice(price);
         post.setStatus(requestedStatus);
         if (requestedStatus == AdoptionPostStatus.OPEN) {
             post.setPublishedAt(LocalDateTime.now());
@@ -267,6 +273,7 @@ public class AdoptionPostService {
                 saved.getDogId(),
                 saved.getTitle(),
                 saved.getContent(),
+                saved.getPrice(),
                 saved.getStatus().name(),
                 saved.getPublishedAt(),
                 saved.getCreatedAt()
@@ -329,6 +336,21 @@ public class AdoptionPostService {
 
     private ApiException validationFailed(String message) {
         return new ApiException(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", message);
+    }
+
+    private Long parsePrice(String price) {
+        if (price == null || price.isBlank()) {
+            return null;
+        }
+        try {
+            long parsed = Long.parseLong(price.trim());
+            if (parsed < 0) {
+                throw validationFailed("price는 0 이상이어야 합니다.");
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            throw validationFailed("price는 숫자여야 합니다.");
+        }
     }
 
     private void validateUser(User currentUser) {
@@ -719,7 +741,10 @@ public class AdoptionPostService {
                 dog.getBreed(),
                 dog.getGender() == null ? null : dog.getGender().name(),
                 dog.getBirthDate(),
+                calculateAge(dog.getBirthDate()),
                 dog.getDescription(),
+                post.getPrice(),
+                dog.getHealth(),
                 context.profileImageUrlsByDogId().get(dog.getId()),
                 context.verificationStatusesByDogId().getOrDefault(dog.getId(), "PENDING"),
                 author.getDisplayName(),
@@ -730,6 +755,17 @@ public class AdoptionPostService {
                 post.getCreatedAt(),
                 post.getUpdatedAt()
         );
+    }
+
+    private Integer calculateAge(LocalDate birthDate) {
+        if (birthDate == null) {
+            return null;
+        }
+        LocalDate today = LocalDate.now(SERVICE_ZONE);
+        if (birthDate.isAfter(today)) {
+            return null;
+        }
+        return Period.between(birthDate, today).getYears();
     }
 
     private AdoptionPostLikedListItemResponse toLikedListItemResponse(

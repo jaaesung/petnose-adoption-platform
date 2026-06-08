@@ -92,9 +92,13 @@ class AdoptionPostServiceTest {
 
         assertThat(response.postId()).isEqualTo(10L);
         assertThat(response.dogId()).isEqualTo(dog.getId());
+        assertThat(response.price()).isEqualTo(120000L);
         assertThat(response.status()).isEqualTo("OPEN");
         assertThat(response.publishedAt()).isNotNull();
 
+        verify(adoptionPostRepository).save(org.mockito.ArgumentMatchers.argThat(post ->
+                post.getPrice().equals(120000L)
+        ));
         verify(dogRepository, never()).save(any());
         verify(verificationLogRepository, never()).save(any());
         verify(fileStorageService).storeProfileImage(eq(dog.getId()), any());
@@ -115,6 +119,26 @@ class AdoptionPostServiceTest {
                 .isInstanceOf(ApiException.class)
                 .extracting("errorCode")
                 .isEqualTo("PROFILE_IMAGE_REQUIRED");
+
+        verifyNoInteractions(userRepository, dogRepository, verificationLogRepository, dogImageRepository, adoptionPostRepository, fileStorageService);
+    }
+
+    @Test
+    void createRejectsNegativePrice() {
+        assertThatThrownBy(() -> adoptionPostService.create(1L, validRequest("dog-1", "OPEN", profileImage(), "-1")))
+                .isInstanceOf(ApiException.class)
+                .extracting("errorCode")
+                .isEqualTo("VALIDATION_FAILED");
+
+        verifyNoInteractions(userRepository, dogRepository, verificationLogRepository, dogImageRepository, adoptionPostRepository, fileStorageService);
+    }
+
+    @Test
+    void createRejectsNonNumericPrice() {
+        assertThatThrownBy(() -> adoptionPostService.create(1L, validRequest("dog-1", "OPEN", profileImage(), "free")))
+                .isInstanceOf(ApiException.class)
+                .extracting("errorCode")
+                .isEqualTo("VALIDATION_FAILED");
 
         verifyNoInteractions(userRepository, dogRepository, verificationLogRepository, dogImageRepository, adoptionPostRepository, fileStorageService);
     }
@@ -224,10 +248,15 @@ class AdoptionPostServiceTest {
     }
 
     private AdoptionPostCreateRequest validRequest(String dogId, String status, MockMultipartFile profileImage) {
+        return validRequest(dogId, status, profileImage, "120000");
+    }
+
+    private AdoptionPostCreateRequest validRequest(String dogId, String status, MockMultipartFile profileImage, String price) {
         return new AdoptionPostCreateRequest(
                 dogId,
                 "제목",
                 "내용",
+                price,
                 status,
                 profileImage
         );

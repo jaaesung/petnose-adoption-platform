@@ -11,6 +11,7 @@ public record DogRegisterRequest(
         String gender,
         String birthDate,
         String description,
+        String health,
         List<MultipartFile> noseImages
 ) {
 }

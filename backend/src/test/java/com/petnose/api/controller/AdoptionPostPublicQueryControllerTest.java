@@ -40,6 +40,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Period;
+import java.time.ZoneId;
 import java.util.Base64;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -61,6 +63,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AdoptionPostPublicQueryControllerTest {
 
     private static final String JWT_SECRET = "test-petnose-jwt-secret-change-me-32bytes";
+    private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 
     private static final Set<String> PUBLIC_LIST_ITEM_FIELDS = Set.of(
             "post_id",
@@ -90,7 +93,10 @@ class AdoptionPostPublicQueryControllerTest {
             "breed",
             "gender",
             "birth_date",
+            "age",
             "description",
+            "price",
+            "health",
             "profile_image_url",
             "verification_status",
             "author_display_name",
@@ -178,6 +184,9 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.items[0].published_at").isNotEmpty())
                 .andExpect(jsonPath("$.items[0].created_at").isNotEmpty())
                 .andExpect(jsonPath("$.items[0].content").doesNotExist())
+                .andExpect(jsonPath("$.items[0].age").doesNotExist())
+                .andExpect(jsonPath("$.items[0].price").doesNotExist())
+                .andExpect(jsonPath("$.items[0].health").doesNotExist())
                 .andExpect(jsonPath("$.items[0].author_contact_phone").doesNotExist())
                 .andExpect(jsonPath("$.items[0].author_user_id").doesNotExist())
                 .andExpect(jsonPath("$.items[0].nose_image_url").doesNotExist())
@@ -186,6 +195,8 @@ class AdoptionPostPublicQueryControllerTest {
         assertPublicListItemFields(result);
         assertThat(responseBody(result)).doesNotContain(
                 "nose_image_url",
+                "price",
+                "health",
                 "content",
                 "author_contact_phone",
                 "author_user_id",
@@ -340,6 +351,7 @@ class AdoptionPostPublicQueryControllerTest {
         saveVerificationLog(author, dog, VerificationResult.PENDING);
         saveVerificationLog(author, dog, VerificationResult.PASSED);
         AdoptionPost post = savePost(author, dog, AdoptionPostStatus.RESERVED, "Reserved adoption post");
+        int expectedAge = expectedAge(dog);
 
         MvcResult result = mockMvc.perform(get("/api/adoption-posts/{post_id}", post.getId()))
                 .andExpect(status().isOk())
@@ -352,7 +364,10 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.breed").value("Maltese"))
                 .andExpect(jsonPath("$.gender").value("MALE"))
                 .andExpect(jsonPath("$.birth_date").value("2023-01-01"))
+                .andExpect(jsonPath("$.age").value(expectedAge))
                 .andExpect(jsonPath("$.description").value("Likes people and walks."))
+                .andExpect(jsonPath("$.price").value(150000))
+                .andExpect(jsonPath("$.health").value("Healthy and vaccinated."))
                 .andExpect(jsonPath("$.profile_image_url").value("/files/" + profilePath))
                 .andExpect(jsonPath("$.verification_status").value("VERIFIED"))
                 .andExpect(jsonPath("$.author_display_name").value("Detail Author"))
@@ -365,7 +380,18 @@ class AdoptionPostPublicQueryControllerTest {
                 .andExpect(jsonPath("$.nose_image_url").doesNotExist())
                 .andReturn();
 
-        assertThat(responseBody(result)).doesNotContain("nose_image_url", "postId");
+        assertThat(responseBody(result)).doesNotContain(
+                "nose_image_url",
+                "postId",
+                "dogId",
+                "birthDate",
+                "profileImageUrl",
+                "authorDisplayName",
+                "authorContactPhone",
+                "publishedAt",
+                "createdAt",
+                "updatedAt"
+        );
     }
 
     @ParameterizedTest
@@ -403,6 +429,43 @@ class AdoptionPostPublicQueryControllerTest {
                 .andReturn();
 
         assertThat(responseBody(result)).doesNotContain("nose_image_url");
+    }
+
+    @Test
+    void detailHandlesNullPriceHealthAndBirthDateForLegacyRows() throws Exception {
+        User author = saveUser("Legacy Author", "01044445555", "Daegu");
+        Dog dog = saveDog(author, "LegacyDog");
+        dog.setBirthDate(null);
+        dog.setHealth(null);
+        dogRepository.saveAndFlush(dog);
+        AdoptionPost post = savePost(author, dog, AdoptionPostStatus.OPEN, "Legacy detail post");
+        post.setPrice(null);
+        adoptionPostRepository.saveAndFlush(post);
+
+        mockMvc.perform(get("/api/adoption-posts/{post_id}", post.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.birth_date").value(nullValue()))
+                .andExpect(jsonPath("$.age").value(nullValue()))
+                .andExpect(jsonPath("$.price").value(nullValue()))
+                .andExpect(jsonPath("$.health").value(nullValue()))
+                .andExpect(jsonPath("$.description").value("Likes people and walks."))
+                .andExpect(jsonPath("$.nose_image_url").doesNotExist());
+    }
+
+    @Test
+    void detailReturnsNullAgeForFutureBirthDate() throws Exception {
+        User author = saveUser("Future Author", "01044446666", "Daegu");
+        Dog dog = saveDog(author, "FutureDog");
+        LocalDate tomorrow = LocalDate.now(SERVICE_ZONE).plusDays(1);
+        dog.setBirthDate(tomorrow);
+        dogRepository.saveAndFlush(dog);
+        AdoptionPost post = savePost(author, dog, AdoptionPostStatus.OPEN, "Future birth date post");
+
+        mockMvc.perform(get("/api/adoption-posts/{post_id}", post.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.age").value(nullValue()))
+                .andExpect(jsonPath("$.birth_date").value(tomorrow.toString()))
+                .andExpect(jsonPath("$.nose_image_url").doesNotExist());
     }
 
     @Test
@@ -918,6 +981,7 @@ class AdoptionPostPublicQueryControllerTest {
         dog.setGender(DogGender.MALE);
         dog.setBirthDate(LocalDate.of(2023, 1, 1));
         dog.setDescription("Likes people and walks.");
+        dog.setHealth("Healthy and vaccinated.");
         dog.setStatus(DogStatus.REGISTERED);
         return dogRepository.saveAndFlush(dog);
     }
@@ -969,6 +1033,7 @@ class AdoptionPostPublicQueryControllerTest {
         post.setDogId(dog.getId());
         post.setTitle(title);
         post.setContent("Friendly dog looking for a family.");
+        post.setPrice(150000L);
         post.setStatus(status);
         post.setPublishedAt(publishedAt);
         if (status == AdoptionPostStatus.CLOSED) {
@@ -1012,6 +1077,10 @@ class AdoptionPostPublicQueryControllerTest {
 
     private String responseBody(MvcResult result) {
         return new String(result.getResponse().getContentAsByteArray(), StandardCharsets.UTF_8);
+    }
+
+    private int expectedAge(Dog dog) {
+        return Period.between(dog.getBirthDate(), LocalDate.now(SERVICE_ZONE)).getYears();
     }
 
     private void assertPublicListItemFields(MvcResult result) throws Exception {

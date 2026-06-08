@@ -58,6 +58,7 @@ CREATE TABLE dogs (
     gender VARCHAR(10) NULL,
     birth_date DATE NULL,
     description TEXT NULL,
+    health TEXT NULL,
     status VARCHAR(30) NOT NULL DEFAULT 'PENDING',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -178,6 +179,7 @@ CREATE TABLE adoption_posts (
     dog_id CHAR(36) NOT NULL,
     title VARCHAR(200) NOT NULL,
     content TEXT NOT NULL,
+    price BIGINT NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
     published_at TIMESTAMP NULL,
     closed_at TIMESTAMP NULL,
@@ -198,7 +200,9 @@ CREATE TABLE adoption_posts (
     CONSTRAINT fk_adoption_posts_dog
         FOREIGN KEY (dog_id) REFERENCES dogs (id),
     CONSTRAINT chk_adoption_posts_status
-        CHECK (status IN ('DRAFT', 'OPEN', 'RESERVED', 'COMPLETED', 'CLOSED'))
+        CHECK (status IN ('DRAFT', 'OPEN', 'RESERVED', 'COMPLETED', 'CLOSED')),
+    CONSTRAINT chk_adoption_posts_price
+        CHECK (price IS NULL OR price >= 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

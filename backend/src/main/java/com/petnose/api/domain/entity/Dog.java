@@ -40,6 +40,9 @@ public class Dog {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    @Column(name = "health", columnDefinition = "TEXT")
+    private String health;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private DogStatus status;

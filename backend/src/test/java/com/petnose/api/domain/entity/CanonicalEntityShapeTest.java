@@ -24,9 +24,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CanonicalEntityShapeTest {
 
     @Test
-    void dogEntityDoesNotExposeRemovedRegistrationSnapshotFields() {
+    void dogEntityDoesNotExposeRemovedRegistrationSnapshotFields() throws Exception {
         Set<String> fields = declaredFieldNames(Dog.class);
+        Column health = Dog.class.getDeclaredField("health").getAnnotation(Column.class);
 
+        assertThat(fields).contains("health");
+        assertThat(health.name()).isEqualTo("health");
+        assertThat(health.nullable()).isTrue();
+        assertThat(health.columnDefinition()).isEqualTo("TEXT");
         assertThat(fields).doesNotContain(
                 join("qdrant", "PointId"),
                 join("nose", "VerificationStatus"),
@@ -234,9 +239,10 @@ class CanonicalEntityShapeTest {
         Column adoptedAt = AdoptionPost.class.getDeclaredField("adoptedAt").getAnnotation(Column.class);
         Column title = AdoptionPost.class.getDeclaredField("title").getAnnotation(Column.class);
         Column content = AdoptionPost.class.getDeclaredField("content").getAnnotation(Column.class);
+        Column price = AdoptionPost.class.getDeclaredField("price").getAnnotation(Column.class);
         Column status = AdoptionPost.class.getDeclaredField("status").getAnnotation(Column.class);
 
-        assertThat(fields).contains("adopterUserId", "adoptedAt");
+        assertThat(fields).contains("adopterUserId", "adoptedAt", "price");
         assertThat(adopterUserId.name()).isEqualTo("adopter_user_id");
         assertThat(adopterUserId.nullable()).isTrue();
         assertThat(adoptedAt.name()).isEqualTo("adopted_at");
@@ -244,6 +250,8 @@ class CanonicalEntityShapeTest {
         assertThat(title.length()).isEqualTo(200);
         assertThat(title.nullable()).isFalse();
         assertThat(content.nullable()).isFalse();
+        assertThat(price.name()).isEqualTo("price");
+        assertThat(price.nullable()).isTrue();
         assertThat(status.length()).isEqualTo(20);
         assertThat(status.nullable()).isFalse();
 
@@ -260,6 +268,13 @@ class CanonicalEntityShapeTest {
                 "ADD KEY idx_adoption_posts_adopter_user_id (adopter_user_id)",
                 "ADD KEY idx_adoption_posts_adopter_status_adopted_at (adopter_user_id, status, adopted_at)",
                 "FOREIGN KEY (adopter_user_id) REFERENCES users(id)"
+        );
+
+        String profileFieldsMigration = resourceText("db/migration/V10__add_adoption_post_price_and_dog_health.sql");
+        assertThat(profileFieldsMigration).contains(
+                "ADD COLUMN price BIGINT NULL AFTER content",
+                "CHECK (price IS NULL OR price >= 0)",
+                "ADD COLUMN health TEXT NULL AFTER description"
         );
     }
 

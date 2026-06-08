@@ -94,6 +94,7 @@ class CanonicalSchemaConsistencyTest {
             "dog_id",
             "title",
             "content",
+            "price",
             "status",
             "published_at",
             "closed_at",
@@ -249,9 +250,11 @@ class CanonicalSchemaConsistencyTest {
         assertThat(adoptionPosts).contains(
                 "adopter_user_id BIGINT NULL",
                 "adopted_at TIMESTAMP NULL",
+                "price BIGINT NULL",
                 "KEY idx_adoption_posts_adopter_user_id (adopter_user_id)",
                 "KEY idx_adoption_posts_adopter_status_adopted_at (adopter_user_id, status, adopted_at)",
-                "FOREIGN KEY (adopter_user_id) REFERENCES users (id)"
+                "FOREIGN KEY (adopter_user_id) REFERENCES users (id)",
+                "CHECK (price IS NULL OR price >= 0)"
         );
     }
 
@@ -287,6 +290,8 @@ class CanonicalSchemaConsistencyTest {
                 "Table adoption_post_likes",
                 "(user_id, post_id) [unique, name: \"uk_adoption_post_likes_user_post\"]",
                 "adopter_user_id bigint",
+                "health text",
+                "price bigint",
                 "adopted_at timestamp",
                 "adopter_user_id [name: \"idx_adoption_posts_adopter_user_id\"]",
                 "(adopter_user_id, status, adopted_at) [name: \"idx_adoption_posts_adopter_status_adopted_at\"]"

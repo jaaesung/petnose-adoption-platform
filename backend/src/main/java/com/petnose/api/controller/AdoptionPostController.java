@@ -92,6 +92,7 @@ public class AdoptionPostController {
             @RequestParam(value = "dog_id", required = false) String dogId,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "content", required = false) String content,
+            @RequestParam(value = "price", required = false) String price,
             @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "profile_image", required = false) MultipartFile profileImage
     ) {
@@ -100,6 +101,7 @@ public class AdoptionPostController {
                 dogId,
                 title,
                 content,
+                price,
                 status,
                 profileImage
         );

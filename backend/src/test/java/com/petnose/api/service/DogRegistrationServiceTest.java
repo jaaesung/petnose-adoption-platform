@@ -180,6 +180,7 @@ class DogRegistrationServiceTest {
         VerificationLog log = onlyVerificationLog();
 
         assertThat(dog.getStatus()).isEqualTo(DogStatus.REGISTERED);
+        assertThat(dog.getHealth()).isEqualTo("healthy");
         assertThat(dogImages).hasSize(5);
         assertThat(log.getResult()).isEqualTo(VerificationResult.PASSED);
         assertThat(log.getSimilarityScore()).isEqualByComparingTo(new BigDecimal("0.00000"));
@@ -523,6 +524,7 @@ class DogRegistrationServiceTest {
                 "MALE",
                 "2024-01-01",
                 "friendly",
+                "healthy",
                 noseImages == null ? null : List.copyOf(noseImages)
         );
     }

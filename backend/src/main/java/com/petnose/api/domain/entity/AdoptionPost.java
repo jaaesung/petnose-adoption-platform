@@ -34,6 +34,9 @@ public class AdoptionPost {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    @Column(name = "price")
+    private Long price;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private AdoptionPostStatus status = AdoptionPostStatus.DRAFT;

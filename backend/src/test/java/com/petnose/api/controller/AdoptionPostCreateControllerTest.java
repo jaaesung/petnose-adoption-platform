@@ -107,13 +107,14 @@ class AdoptionPostCreateControllerTest {
         saveVerificationLog(user, dog, noseImage, VerificationResult.PASSED);
         String token = tokenFor(user);
 
-        ResultActions result = createPost(token, dog.getId(), "말티즈 초코 가족을 찾습니다", "활발하고 사람을 좋아하는 아이입니다.", "OPEN");
+        ResultActions result = createPostWithPrice(token, dog.getId(), "말티즈 초코 가족을 찾습니다", "활발하고 사람을 좋아하는 아이입니다.", "150000", "OPEN");
 
         result.andExpect(status().isCreated())
                 .andExpect(jsonPath("$.post_id").isNumber())
                 .andExpect(jsonPath("$.dog_id").value(dog.getId()))
                 .andExpect(jsonPath("$.title").value("말티즈 초코 가족을 찾습니다"))
                 .andExpect(jsonPath("$.content").value("활발하고 사람을 좋아하는 아이입니다."))
+                .andExpect(jsonPath("$.price").value(150000))
                 .andExpect(jsonPath("$.status").value("OPEN"))
                 .andExpect(jsonPath("$.published_at").isNotEmpty())
                 .andExpect(jsonPath("$.created_at").isNotEmpty())
@@ -122,6 +123,7 @@ class AdoptionPostCreateControllerTest {
         AdoptionPost saved = adoptionPostRepository.findAll().getFirst();
         assertThat(saved.getDogId()).isEqualTo(dog.getId());
         assertThat(saved.getAuthorUserId()).isEqualTo(user.getId());
+        assertThat(saved.getPrice()).isEqualTo(150000L);
         assertThat(dogRepository.count()).isEqualTo(1);
         assertThat(dogImageRepository.count()).isEqualTo(2);
         assertThat(verificationLogRepository.count()).isEqualTo(1);
@@ -144,10 +146,12 @@ class AdoptionPostCreateControllerTest {
                         .param("size", "20"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].post_id").value(saved.getId()))
-                .andExpect(jsonPath("$.items[0].profile_image_url").value(profileImageUrl));
+                .andExpect(jsonPath("$.items[0].profile_image_url").value(profileImageUrl))
+                .andExpect(jsonPath("$.items[0].price").doesNotExist());
         mockMvc.perform(get("/api/adoption-posts/{post_id}", saved.getId()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.post_id").value(saved.getId()))
+                .andExpect(jsonPath("$.price").value(150000))
                 .andExpect(jsonPath("$.profile_image_url").value(profileImageUrl));
         mockMvc.perform(get("/api/adoption-posts/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
@@ -174,6 +178,54 @@ class AdoptionPostCreateControllerTest {
         AdoptionPost saved = adoptionPostRepository.findAll().getFirst();
         assertThat(saved.getStatus()).isEqualTo(AdoptionPostStatus.DRAFT);
         assertThat(saved.getPublishedAt()).isNull();
+        assertThat(saved.getPrice()).isNull();
+    }
+
+    @Test
+    void createStoresNullPriceWhenPriceIsBlank() throws Exception {
+        User user = saveUser("초코 보호자", true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        saveVerificationLog(user, dog, saveNoseImage(dog), VerificationResult.PASSED);
+
+        createPostWithPrice(tokenFor(user), dog.getId(), "제목", "내용", "   ", "OPEN")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.price").value(nullValue()));
+
+        AdoptionPost saved = adoptionPostRepository.findAll().getFirst();
+        assertThat(saved.getPrice()).isNull();
+    }
+
+    @Test
+    void rejectWhenPriceIsNegative() throws Exception {
+        User user = saveUser("초코 보호자", true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        saveVerificationLog(user, dog, saveNoseImage(dog), VerificationResult.PASSED);
+
+        createPostWithPrice(tokenFor(user), dog.getId(), "제목", "내용", "-1", "OPEN")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void rejectWhenPriceIsNotNumeric() throws Exception {
+        User user = saveUser("초코 보호자", true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        saveVerificationLog(user, dog, saveNoseImage(dog), VerificationResult.PASSED);
+
+        createPostWithPrice(tokenFor(user), dog.getId(), "제목", "내용", "free", "OPEN")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
+    }
+
+    @Test
+    void rejectWhenPriceOverflowsLong() throws Exception {
+        User user = saveUser("초코 보호자", true);
+        Dog dog = saveDog(user, DogStatus.REGISTERED);
+        saveVerificationLog(user, dog, saveNoseImage(dog), VerificationResult.PASSED);
+
+        createPostWithPrice(tokenFor(user), dog.getId(), "제목", "내용", "9223372036854775808", "OPEN")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error_code").value("VALIDATION_FAILED"));
     }
 
     @Test
@@ -250,7 +302,15 @@ class AdoptionPostCreateControllerTest {
     }
 
     private ResultActions createPost(String token, String dogId, String title, String content, String status) throws Exception {
-        return createPost(token, dogId, title, content, status, profileImage());
+        return createPost(token, dogId, title, content, null, status, profileImage());
+    }
+
+    private ResultActions createPost(String token, String dogId, String title, String content, String status, MockMultipartFile profileImage) throws Exception {
+        return createPost(token, dogId, title, content, null, status, profileImage);
+    }
+
+    private ResultActions createPostWithPrice(String token, String dogId, String title, String content, String price, String status) throws Exception {
+        return createPost(token, dogId, title, content, price, status, profileImage());
     }
 
     private ResultActions createPost(
@@ -258,6 +318,7 @@ class AdoptionPostCreateControllerTest {
             String dogId,
             String title,
             String content,
+            String price,
             String status,
             MockMultipartFile profileImage
     ) throws Exception {
@@ -270,6 +331,9 @@ class AdoptionPostCreateControllerTest {
         }
         if (content != null) {
             request.param("content", content);
+        }
+        if (price != null) {
+            request.param("price", price);
         }
         if (status != null) {
             request.param("status", status);

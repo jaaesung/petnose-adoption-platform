@@ -903,6 +903,7 @@ Form fields:
 - `gender`: required, `MALE`, `FEMALE`, or `UNKNOWN`
 - `birth_date`: `YYYY-MM-DD`, optional
 - `description`: string, optional
+- `health`: string, optional
 - `nose_images`: file[], required, exactly `5`
 
 Dog nose v2 active contract:
@@ -1364,6 +1365,7 @@ Form fields:
 - `dog_id`: string, required. `POST /api/dogs/register`에서 정상 등록된 dog id다.
 - `title`: string, required, non-blank, max 200 after trim.
 - `content`: string, required, non-blank.
+- `price`: optional. 원화 정수 금액이며 blank는 null로 저장한다. non-numeric 또는 negative 값은 `VALIDATION_FAILED`.
 - `status`: optional, `DRAFT` or `OPEN`; default `DRAFT`.
 - `profile_image`: file, required. 분양글 대표 이미지이며 `dog_images.image_type=PROFILE` row로 저장된다.
 
@@ -1375,6 +1377,7 @@ Response `201`:
   "dog_id": "uuid",
   "title": "말티즈 가족을 찾습니다",
   "content": "상세 내용...",
+  "price": 150000,
   "status": "OPEN",
   "published_at": "2026-05-13T10:00:00",
   "created_at": "2026-05-13T10:00:00"
@@ -1392,6 +1395,7 @@ Contract notes:
 - post 생성 전 `users.display_name`은 non-blank여야 한다.
 - `title`은 required, non-blank이며 trim 후 최대 200자다.
 - `content`는 required, non-blank이며 trim 후 저장된다.
+- `price`는 nullable `adoption_posts.price`에 저장된다. 값이 있으면 0 이상의 정수여야 한다.
 - 분양글 생성은 새 `dogs` row 또는 새 NOSE `dog_images` row를 만들지 않는다.
 - 분양글 생성은 `profile_image`를 저장하고 `dog_images.image_type=PROFILE` row를 만든다.
 - 분양글 생성은 embed service를 호출하지 않고 Qdrant upsert도 수행하지 않는다.
@@ -1455,6 +1459,7 @@ Contract notes:
 - `verification_status`는 Flutter display를 위해 포함한다.
 - `profile_image_url`은 노출할 수 있다.
 - `nose_image_url`은 노출하지 않는다.
+- list item에는 `age`, `price`, `health`를 포함하지 않는다. 이 필드는 public detail 전용이다.
 - Authorization header가 없으면 `liked=false`다.
 - Authorization header가 있으면 current user 기준 `liked`를 계산한다.
 - Authorization header가 malformed/invalid이면 `UNAUTHORIZED`를 반환한다.
@@ -1482,7 +1487,10 @@ Response `200`:
   "breed": "말티즈",
   "gender": "MALE",
   "birth_date": "2024-01-01",
+  "age": 2,
   "description": "사람을 좋아합니다.",
+  "price": 150000,
+  "health": "예방접종 완료, 특이 질환 없음",
   "profile_image_url": "/files/dogs/{uuid}/profile/profile.jpg",
   "verification_status": "VERIFIED",
   "author_display_name": "초코 보호자",
@@ -1498,6 +1506,9 @@ Response `200`:
 Contract notes:
 
 - detail은 `OPEN`, `RESERVED`, `COMPLETED` post에 대해서만 public이다.
+- `age`는 `dogs.birth_date` 기준 만 나이 계산값이다. `birth_date`가 null이거나 미래 날짜면 null이다. `age` 컬럼은 없다.
+- `price`는 nullable `adoption_posts.price`, `health`는 nullable `dogs.health`에서 내려간다.
+- `birth_date`와 `description`은 기존 호환성을 위해 유지한다. `health`는 `description`과 별도 필드이며 미입력 시 null이다.
 - `verification_status`는 Flutter display를 위해 포함한다.
 - `profile_image_url`은 노출할 수 있다.
 - `nose_image_url`은 노출하지 않는다.
@@ -1957,6 +1968,9 @@ curl -X POST "http://localhost/api/dogs/register" \
   -F "name=초코" \
   -F "breed=말티즈" \
   -F "gender=MALE" \
+  -F "birth_date=2024-01-01" \
+  -F "description=사람을 좋아합니다." \
+  -F "health=예방접종 완료, 특이 질환 없음" \
   -F "nose_images=@/path/to/nose-1.jpg" \
   -F "nose_images=@/path/to/nose-2.jpg" \
   -F "nose_images=@/path/to/nose-3.jpg" \
@@ -1968,6 +1982,7 @@ curl -X POST "http://localhost/api/adoption-posts" \
   -F "dog_id=<dog_id>" \
   -F "title=말티즈 가족을 찾습니다" \
   -F "content=상세 내용..." \
+  -F "price=150000" \
   -F "status=OPEN" \
   -F "profile_image=@/path/to/profile.jpg"
 

@@ -30,9 +30,9 @@
 
 ### D. 분양글 작성
 
-- 먼저 `POST /api/dogs/register`에 강아지 정보와 `nose_images` 5장을 보내고 비문 중복 검사를 완료한다.
+- 먼저 `POST /api/dogs/register`에 강아지 정보와 `nose_images` 5장을 보내고 비문 중복 검사를 완료한다. Optional `health`를 보낼 수 있으며, `age`는 보내거나 저장하지 않고 서버가 `birth_date`로 계산한다.
 - `registration_allowed=true`일 때만 반환된 `dog_id`를 분양글 작성 form state에 저장한다.
-- 분양글 생성은 `POST /api/adoption-posts`로 호출한다.
+- 분양글 생성은 `POST /api/adoption-posts`로 호출한다. Optional `price`는 원화 정수 금액이며 blank는 null로 저장된다.
 - 분양글 생성의 `profile_image`는 분양글 대표 이미지이며 `dog_images.image_type=PROFILE`로 저장된다.
 - user profile image와 dog/adoption profile image 저장 영역은 다르다.
 
@@ -40,6 +40,8 @@
 
 - 목록은 `GET /api/adoption-posts`, 상세는 `GET /api/adoption-posts/{post_id}`를 호출한다.
 - 목록/상세 response의 `liked` field를 그대로 사용한다.
+- 상세 response는 `birth_date`와 `description`을 유지하며 `age`, `price`, `health`를 추가로 반환한다. `age`는 저장 필드가 아니라 `birth_date` 기준 만 나이 계산값이고, `health`는 `description`과 별도 필드로 미입력 시 null이다.
+- 목록 response에는 `age`, `price`, `health`가 없다.
 - Authorization header가 없으면 public list/detail은 `liked=false`를 반환한다.
 - Authorization header가 있으면 서버가 current user 기준 `liked`를 계산한다.
 - 좋아요 추가는 `PUT /api/adoption-posts/{post_id}/like`, 취소는 `DELETE /api/adoption-posts/{post_id}/like`를 호출한다.
@@ -157,6 +159,7 @@ Form-data:
 - `gender`: required, `MALE`, `FEMALE`, or `UNKNOWN`
 - `birth_date`: optional, `YYYY-MM-DD`
 - `description`: optional
+- `health`: optional
 - `nose_images`: required file[], exactly 5. 같은 multipart field name으로 5개 file part를 보낸다.
 
 App-facing response fields:
@@ -228,6 +231,7 @@ Form fields:
 - `dog_id`: required. `POST /api/dogs/register` 성공 응답의 `dog_id`.
 - `title`: required.
 - `content`: required.
+- `price`: optional, 원화 정수 금액. Blank는 null, non-numeric/negative 값은 `VALIDATION_FAILED`.
 - `status`: optional, `DRAFT` 또는 `OPEN`. 생략 시 `DRAFT`.
 - `profile_image`: required file. 분양글 대표 이미지.
 

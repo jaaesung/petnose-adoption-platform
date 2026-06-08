@@ -312,6 +312,7 @@ public class DogRegistrationService {
         dog.setGender(DogGender.from(request.gender()));
         dog.setBirthDate(birthDate);
         dog.setDescription(blankToNull(request.description()));
+        dog.setHealth(blankToNull(request.health()));
         dog.setStatus(DogStatus.PENDING);
         dogRepository.save(dog);
 

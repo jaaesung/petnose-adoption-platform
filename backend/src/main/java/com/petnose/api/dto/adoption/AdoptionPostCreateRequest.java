@@ -8,6 +8,7 @@ public record AdoptionPostCreateRequest(
         String dogId,
         String title,
         String content,
+        String price,
         String status,
         MultipartFile profileImage
 ) {
