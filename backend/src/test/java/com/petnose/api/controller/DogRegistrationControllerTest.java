@@ -111,6 +111,7 @@ class DogRegistrationControllerTest {
         ArgumentCaptor<DogRegisterRequest> requestCaptor = ArgumentCaptor.forClass(DogRegisterRequest.class);
         verify(dogRegistrationService).register(requestCaptor.capture());
         assertThat(requestCaptor.getValue().userId()).isEqualTo(42L);
+        assertThat(requestCaptor.getValue().health()).isEqualTo("healthy");
         assertThat(requestCaptor.getValue().noseImages()).hasSize(5);
 
         JsonNode body = objectMapper.readTree(responseBody(result));
@@ -315,7 +316,8 @@ class DogRegistrationControllerTest {
                 .param("breed", "Jindo")
                 .param("gender", "MALE")
                 .param("birth_date", "2024-01-01")
-                .param("description", "friendly");
+                .param("description", "friendly")
+                .param("health", "healthy");
     }
 
     private static ScoreBreakdownResponse scoreBreakdown(double finalScore) {

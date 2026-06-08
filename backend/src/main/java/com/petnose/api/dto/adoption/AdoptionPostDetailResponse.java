@@ -24,8 +24,14 @@ public record AdoptionPostDetailResponse(
         String gender,
         @JsonProperty("birth_date")
         LocalDate birthDate,
+        @JsonProperty("age")
+        Integer age,
         @JsonProperty("description")
         String description,
+        @JsonProperty("price")
+        Long price,
+        @JsonProperty("health")
+        String health,
         @JsonProperty("profile_image_url")
         String profileImageUrl,
         @JsonProperty("verification_status")

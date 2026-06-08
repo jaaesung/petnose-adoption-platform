@@ -13,6 +13,8 @@ public record AdoptionPostCreateResponse(
         String title,
         @JsonProperty("content")
         String content,
+        @JsonProperty("price")
+        Long price,
         @JsonProperty("status")
         String status,
         @JsonProperty("published_at")

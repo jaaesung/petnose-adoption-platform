@@ -129,6 +129,7 @@ class DogRegisterAuthPrincipalIntegrationTest {
         Dog dog = onlyDog();
         assertThat(dog.getOwnerUserId()).isEqualTo(user.getId());
         assertThat(dog.getStatus()).isEqualTo(DogStatus.REGISTERED);
+        assertThat(dog.getHealth()).isEqualTo("healthy");
 
         List<DogImage> noseImages = dogImageRepository.findAll();
         assertThat(noseImages).hasSize(5);
@@ -436,7 +437,8 @@ class DogRegisterAuthPrincipalIntegrationTest {
     private MockHttpServletRequestBuilder validDogMultipart(Long userId) {
         return dogMultipart(userId, noseImages(5), "Bori", "Jindo", "MALE")
                 .param("birth_date", "2024-01-01")
-                .param("description", "friendly");
+                .param("description", "friendly")
+                .param("health", "healthy");
     }
 
     private MockHttpServletRequestBuilder dogMultipart(
